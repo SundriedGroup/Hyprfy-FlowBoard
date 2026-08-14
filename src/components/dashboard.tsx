@@ -17,7 +17,11 @@ type DashboardProps = {
   onToggleDone: (item: FlowItem) => Promise<void>;
 };
 
-const trackedChannels = ["Instagram", "Facebook", "TikTok", "LinkedIn", "YouTube"] as const;
+const trackedChannels = ["Instagram", "X", "Facebook", "TikTok", "LinkedIn", "YouTube"] as const;
+
+function channelLabel(channel: string) {
+  return channel === "X" ? "X / Twitter" : channel;
+}
 
 function metadataObject(value: Json): Record<string, Json | undefined> {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -107,7 +111,7 @@ export function Dashboard({ dates, days, items, loading, onAddTask, onEditItem, 
   return (
     <div className="dashboard-scroll">
       <section className="dashboard-intro">
-        <div><p className="eyebrow">Week ahead</p><h2>Your social command centre.</h2><p>Tasks, publishing momentum and channel performance in one place.</p></div>
+        <div><p className="eyebrow">Personal brand companion</p><h2>Build the brand through the week.</h2><p>Turn real life into a coherent story, useful content and stronger audience relationships.</p></div>
         <button onClick={onOpenFlowboard}>Open Flowboard <ArrowRight size={15} /></button>
       </section>
 
@@ -157,11 +161,11 @@ export function Dashboard({ dates, days, items, loading, onAddTask, onEditItem, 
           {trackedChannels.map((channel) => {
             const live = stats?.channels.find((entry) => entry.channel === channel);
             const planned = weekItems.filter((item) => itemChannels(item).includes(channel)).length;
-            return <article key={channel} className={live?.connected ? "connected" : ""}>
-              <div className="channel-stat-title"><span>{channel.slice(0, 2).toUpperCase()}</span><div><strong>{channel}</strong><small>{live?.accountName || (channel === "Instagram" || channel === "Facebook" ? "Awaiting Meta" : "Planning data")}</small></div></div>
+            return <article key={channel} className={`${live?.connected ? "connected" : ""} ${channel === "X" ? "priority-channel" : ""}`}>
+              <div className="channel-stat-title"><span>{channel.slice(0, 2).toUpperCase()}</span><div><strong>{channelLabel(channel)}</strong><small>{live?.accountName || (channel === "Instagram" || channel === "Facebook" ? "Awaiting Meta" : channel === "X" ? "Launch channel" : "Planning data")}</small></div></div>
               <dl><MetricCell stats={live} metric="followers" label="Followers" /><MetricCell stats={live} metric="reach" label="Reach" /><MetricCell stats={live} metric="views" label="Views" /><MetricCell stats={live} metric="interactions" label="Interactions" /></dl>
               <MiniTrend values={live?.growth.interactions.series ?? []} />
-              <footer><span><BarChart3 size={12} /> {planned} planned</span><span>{live?.contentPublished ?? "—"} published <b className={trendDetail(live?.contentPublished ?? null, live?.growth.contentPublished.previous ?? null).direction}>{trendDetail(live?.contentPublished ?? null, live?.growth.contentPublished.previous ?? null).label}</b></span>{live?.connected && <em>Live</em>}</footer>
+              <footer><span><BarChart3 size={12} /> {planned} planned</span><span>{live?.contentPublished ?? "—"} published <b className={trendDetail(live?.contentPublished ?? null, live?.growth.contentPublished.previous ?? null).direction}>{trendDetail(live?.contentPublished ?? null, live?.growth.contentPublished.previous ?? null).label}</b></span>{live?.connected ? <em>Live</em> : channel === "X" ? <em>Focus</em> : null}</footer>
             </article>;
           })}
         </div>

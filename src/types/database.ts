@@ -3,6 +3,34 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export interface Database {
   public: {
     Tables: {
+      profiles: {
+        Row: {
+          user_id: string; display_name: string | null; positioning: string | null;
+          personal_narrative: string | null; content_philosophy: string | null;
+          brand_brain: Json; created_at: string; updated_at: string;
+        };
+        Insert: {
+          user_id: string; display_name?: string | null; positioning?: string | null;
+          personal_narrative?: string | null; content_philosophy?: string | null;
+          brand_brain?: Json; created_at?: string; updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["profiles"]["Insert"]>;
+        Relationships: [];
+      };
+      weeks: {
+        Row: {
+          id: string; user_id: string; season_id: string | null; week_number: number;
+          title: string; theme: string | null; start_date: string; end_date: string;
+          status: string; metadata: Json; created_at: string; updated_at: string;
+        };
+        Insert: {
+          id?: string; user_id: string; season_id?: string | null; week_number: number;
+          title: string; theme?: string | null; start_date: string; end_date: string;
+          status?: string; metadata?: Json; created_at?: string; updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["weeks"]["Insert"]>;
+        Relationships: [];
+      };
       flow_days: {
         Row: {
           id: string; user_id: string; day: string; theme: string | null;
@@ -67,3 +95,5 @@ export interface Database {
 
 export type FlowDay = Database["public"]["Tables"]["flow_days"]["Row"];
 export type FlowItem = Database["public"]["Tables"]["flow_items"]["Row"];
+export type BrandProfile = Database["public"]["Tables"]["profiles"]["Row"];
+export type BrandWeek = Database["public"]["Tables"]["weeks"]["Row"];

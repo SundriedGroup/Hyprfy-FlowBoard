@@ -22,6 +22,8 @@ const planSchema = z.object({
   contentItems: z.array(z.object({
     title: z.string().min(1).max(120),
     description: z.string().min(1).max(800),
+    hook: z.string().min(1).max(220).describe("A specific opening line that earns attention without clickbait."),
+    socialCopy: z.string().min(1).max(2200).describe("Publish-ready social copy, not a note about what the creator should write."),
     stage: z.enum(["idea", "script", "capture", "edit", "publish"]),
     durationMinutes: z.number().int().min(5).max(240),
     channels: z.array(channelSchema).min(1).max(4),
@@ -35,6 +37,13 @@ const planSchema = z.object({
 
 function metadataObject(value: Json): Record<string, Json | undefined> {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function weekStartFor(day: string) {
+  const date = new Date(`${day}T12:00:00Z`);
+  const weekday = date.getUTCDay();
+  date.setUTCDate(date.getUTCDate() - (weekday === 0 ? 6 : weekday - 1));
+  return date.toISOString().slice(0, 10);
 }
 
 export async function POST(request: Request) {
@@ -51,17 +60,26 @@ export async function POST(request: Request) {
   }
 
   try {
+    const [profileResult, weekResult] = await Promise.all([
+      supabase.from("profiles").select("display_name,positioning,personal_narrative,content_philosophy,brand_brain").eq("user_id", user.id).maybeSingle(),
+      supabase.from("weeks").select("title,theme,metadata").eq("user_id", user.id).eq("start_date", weekStartFor(context.day)).maybeSingle(),
+    ]);
+    if (profileResult.error || weekResult.error) throw profileResult.error ?? weekResult.error;
+    const strategicContext = {
+      brandProfile: profileResult.data ?? null,
+      weeklyBrief: weekResult.data ?? null,
+    };
     const result = await generateText({
       model: gateway("openai/gpt-5.4-mini"),
       providerOptions: { gateway: { user: user.id, tags: ["feature:flowboard-plan"] } },
       output: Output.object({ name: "FlowboardSocialPlan", description: "An actionable social media plan for one day.", schema: planSchema }),
-      system: "You are the editorial strategist inside Hyprfy Flowboard. Turn real-life context into a focused social plan. Do not invent events or claims. Prefer documenting what is genuinely happening over manufacturing content. Decide whether the story is strong enough to post today, should be captured and banked for a weekly vlog, or supports both. Produce only practical work that can be completed by one creator.",
-      prompt: `Create a social media plan from this day context:\n${JSON.stringify(context, null, 2)}`,
+      system: "You are the personal brand strategist and copywriter inside Hyprfy Flowboard. Turn real-life context into a focused social plan that compounds the creator's stated mission, positioning, audience and objectives. Treat their Brand Profile as durable strategy and their Weekly Brief as the current narrative and production constraint. Never reveal private boundaries or personal profile data in copy unless the day context explicitly makes it public. Do not invent events, achievements or claims. Prefer documenting what is genuinely happening over manufacturing content. Respect selected channels and channel purposes; do not recommend a disabled channel. Decide whether the story is strong enough to post today, should be captured and banked for a weekly vlog, or supports both. Every content item must include a strong, specific hook and finished, publish-ready social copy—not instructions or placeholders. Treat X as an important fast-distribution channel when enabled and when the supplied context supports a useful standalone post or thread opener; make its copy concise, conversational, and free of engagement bait. Use channelPlan for concrete adaptations across selected platforms. Fit the work to the stated weekly time and energy capacity. Produce only practical work that can be completed by one creator.",
+      prompt: `Create a social media plan from the strategic and day context below. Empty fields are unknown and must not be guessed.\n\nSTRATEGIC CONTEXT\n${JSON.stringify(strategicContext, null, 2)}\n\nDAY CONTEXT\n${JSON.stringify(context, null, 2)}`,
     });
     const plan = result.output;
     const generatedAt = new Date().toISOString();
     const rows = [
-      ...plan.contentItems.map((entry, index) => ({ user_id: user.id, day: context.day, item_type: entry.stage, title: entry.title, description: entry.description, status: "open", duration_minutes: entry.durationMinutes, sort_order: 100000 + ((index + 1) * 1024), metadata: { ai_generated: true, generated_at: generatedAt, recommendation: plan.decision, channels: entry.channels, channel_plan: plan.channelPlan } })),
+      ...plan.contentItems.map((entry, index) => ({ user_id: user.id, day: context.day, item_type: entry.stage, title: entry.title, description: entry.description, status: "open", duration_minutes: entry.durationMinutes, sort_order: 100000 + ((index + 1) * 1024), metadata: { ai_generated: true, generated_at: generatedAt, recommendation: plan.decision, channels: entry.channels, channel_plan: plan.channelPlan, hook: entry.hook, social_copy: entry.socialCopy } })),
       ...plan.todoItems.map((entry, index) => ({ user_id: user.id, day: context.day, item_type: "task", title: entry.title, description: entry.description, status: "open", duration_minutes: entry.durationMinutes, sort_order: 100000 + ((index + 1) * 1024), metadata: { ai_generated: true, generated_at: generatedAt, recommendation: plan.decision } })),
     ];
 

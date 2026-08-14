@@ -3,6 +3,8 @@ export type PlanDecision = "post_today" | "bank_for_weekly_vlog" | "post_and_ban
 export interface GeneratedContentItem {
   title: string;
   description: string;
+  hook: string;
+  socialCopy: string;
   stage: "idea" | "script" | "capture" | "edit" | "publish";
   durationMinutes: number;
   channels: string[];
