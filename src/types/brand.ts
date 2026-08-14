@@ -1,4 +1,4 @@
-export const brandChannels = ["Instagram", "X", "Facebook", "TikTok", "LinkedIn", "YouTube", "Newsletter", "Blog"] as const;
+export const brandChannels = ["Instagram", "X", "Facebook", "TikTok", "LinkedIn", "YouTube", "Substack", "Blog"] as const;
 
 export type BrandChannelName = (typeof brandChannels)[number];
 

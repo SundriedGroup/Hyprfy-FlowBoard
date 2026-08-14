@@ -7,7 +7,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
     <main className="login-shell">
       <section className="login-brand">
         <div className="brand-mark"><CalendarDays size={24} /></div>
-        <p className="eyebrow">Hyprfy Flowboard · v0.6</p>
+        <p className="eyebrow">Hyprfy Flowboard · v0.7.2</p>
         <h1>Plan the moment.<br /><span>Publish the story.</span></h1>
         <p>One social planning system for daily context, AI direction, content production and the work that moves your story forward.</p>
         <div className="login-week" aria-hidden="true">

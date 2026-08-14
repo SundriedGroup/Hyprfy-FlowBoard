@@ -14,17 +14,18 @@ import type { FlowDay, FlowItem, Json } from "@/types/database";
 import type { GeneratedPlan, PlanDecision } from "@/types/plan";
 import { Dashboard } from "./dashboard";
 import { BrandProfile } from "./brand-profile";
+import { ChannelProfiles } from "./channel-profiles";
 import { navItems } from "./icons";
 import { WeeklyBrief } from "./weekly-brief";
 import { signOut } from "@/app/actions";
 
 const sections = ["task", "idea", "script", "capture", "edit", "publish"] as const;
 const sectionLabels: Record<Section, string> = { task: "To do", idea: "Idea", script: "Script", capture: "Capture", edit: "Edit", publish: "Publish" };
-const channelOptions = ["Instagram", "TikTok", "LinkedIn", "YouTube", "Facebook", "X", "Newsletter", "Blog"] as const;
+const channelOptions = ["Instagram", "TikTok", "LinkedIn", "YouTube", "Facebook", "X", "Substack", "Blog"] as const;
 type Section = (typeof sections)[number];
 type SaveState = "idle" | "saving" | "saved" | "error";
 type ViewDays = 7 | 14;
-type AppView = "dashboard" | "brand" | "brief" | "flowboard";
+type AppView = "dashboard" | "brand" | "channels" | "brief" | "flowboard";
 type ItemPatch = Pick<FlowItem, "title" | "description" | "status" | "priority" | "duration_minutes" | "item_type" | "day" | "metadata">;
 
 function containerId(day: string, type: Section) { return `${day}::${type}`; }
@@ -40,7 +41,7 @@ function itemMetadata(item: FlowItem): Record<string, Json | undefined> {
 
 function itemChannels(item: FlowItem) {
   const channels = itemMetadata(item).channels;
-  return Array.isArray(channels) ? channels.filter((channel): channel is string => typeof channel === "string") : [];
+  return Array.isArray(channels) ? channels.filter((channel): channel is string => typeof channel === "string").map((channel) => channel === "Newsletter" ? "Substack" : channel) : [];
 }
 
 function metadataObject(value: Json): Record<string, Json | undefined> {
@@ -399,20 +400,28 @@ export function Flowboard({ userId, userEmail }: { userId: string; userEmail: st
   }
 
   const activeItem = items.find((item) => item.id === activeId);
-  const inboxItems = items.filter((item) => !item.day).sort((a, b) => a.sort_order - b.sort_order);
+  const visibleItems = items.filter((item) => item.status !== "archived");
+  const inboxItems = visibleItems.filter((item) => !item.day).sort((a, b) => a.sort_order - b.sort_order);
   function openView(view: AppView) {
     setActiveView(view);
-    if (view === "dashboard") { setOffset(0); setViewDays(7); }
+    if (view === "dashboard" || view === "channels") { setOffset(0); setViewDays(7); }
   }
   function showSaved() {
     setSaveState("saved");
     window.setTimeout(() => setSaveState("idle"), 1600);
   }
-  const viewTitle = activeView === "dashboard" ? "Dashboard" : activeView === "brand" ? "Brand Profile" : activeView === "brief" ? "Weekly Brief" : "Flowboard";
+  function handlePlanApplied() {
+    const weekday = new Date().getDay();
+    setOffset(-(weekday === 0 ? 6 : weekday - 1));
+    setViewDays(7);
+    setActiveView("flowboard");
+    void loadBoard();
+  }
+  const viewTitle = activeView === "dashboard" ? "Dashboard" : activeView === "brand" ? "Brand Profile" : activeView === "channels" ? "Channel Profiles" : activeView === "brief" ? "Weekly Brief" : "Flowboard";
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="logo"><span>H</span><div><b>HYPRFY</b><small>Flowboard · v0.6</small></div></div>
+        <div className="logo"><span>H</span><div><b>HYPRFY</b><small>Flowboard · v0.7.2</small></div></div>
         <nav>{navItems.map(({ label, icon: Icon, view, inbox }) => {
           const active = view === activeView;
           return <button className={active ? "active" : ""} key={label} onClick={() => view ? openView(view) : inbox ? setInboxOpen(true) : undefined} disabled={!view && !inbox}><Icon size={17} /><span>{label}</span>{inbox && inboxItems.length > 0 && <b className="nav-count">{inboxItems.length}</b>}</button>;
@@ -421,7 +430,7 @@ export function Flowboard({ userId, userEmail }: { userId: string; userEmail: st
       </aside>
       <main className="workspace">
         <header className="topbar">
-          <div><p className="eyebrow">Personal brand companion · v0.6</p><h1>{viewTitle}</h1></div>
+          <div><p className="eyebrow">Personal brand companion · v0.7.2</p><h1>{viewTitle}</h1></div>
           <div className="topbar-actions">
             {activeView === "flowboard" && <><div className="date-controls"><button onClick={() => setOffset((value) => value - viewDays)} aria-label="Previous dates"><ArrowLeft size={16} /></button><button onClick={() => setOffset(0)}>Today</button><button onClick={() => setOffset((value) => value + viewDays)} aria-label="Next dates"><ArrowRight size={16} /></button></div>
             <div className="view-controls"><button className={viewDays === 7 ? "active" : ""} aria-pressed={viewDays === 7} onClick={() => setViewDays(7)}><CalendarDays size={15} />7 Days</button><button className={viewDays === 14 ? "active" : ""} aria-pressed={viewDays === 14} onClick={() => setViewDays(14)}>14 Days</button><button disabled>Month</button></div></>}
@@ -430,9 +439,9 @@ export function Flowboard({ userId, userEmail }: { userId: string; userEmail: st
           <div className={`save-state ${saveState}`}>{saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : saveState === "error" ? "Save failed" : ""}</div>
         </header>
         {error && <div className="error-banner"><span>{error}</span><button onClick={() => setError(null)}><X size={15} /></button></div>}
-        {activeView === "dashboard" ? <Dashboard dates={dates.slice(0, 7)} days={days} items={items} loading={loading} onAddTask={(title) => addItem(toDateKey(new Date()), "task", title)} onEditItem={setEditingItem} onOpenFlowboard={() => openView("flowboard")} onToggleDone={toggleItemDone} /> : activeView === "brand" ? <BrandProfile userId={userId} onSaved={showSaved} /> : activeView === "brief" ? <WeeklyBrief userId={userId} onOpenFlowboard={() => openView("flowboard")} onSaved={showSaved} /> : loading ? <div className="board-loading">Preparing your days…</div> : (
+        {activeView === "dashboard" ? <Dashboard dates={dates.slice(0, 7)} days={days} items={visibleItems} loading={loading} onAddTask={(title) => addItem(toDateKey(new Date()), "task", title)} onEditItem={setEditingItem} onOpenFlowboard={() => openView("flowboard")} onToggleDone={toggleItemDone} /> : activeView === "brand" ? <BrandProfile userId={userId} onSaved={showSaved} /> : activeView === "channels" ? <ChannelProfiles userId={userId} dates={dates.slice(0, 7)} items={visibleItems} onEditStrategy={() => openView("brand")} /> : activeView === "brief" ? <WeeklyBrief userId={userId} onOpenFlowboard={() => openView("flowboard")} onPlanApplied={handlePlanApplied} onSaved={showSaved} /> : loading ? <div className="board-loading">Preparing your days…</div> : (
           <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={(event: DragStartEvent) => setActiveId(String(event.active.id))} onDragEnd={(event) => void handleDragEnd(event)} onDragCancel={() => setActiveId(null)}>
-            <div className="board-scroll">{dates.map((date) => { const key = toDateKey(date); return <DayColumn key={key} date={date} day={days.find((entry) => entry.day === key)} items={items.filter((item) => item.day === key)} generating={generatingDay === key} onDayChange={saveDay} onAdd={(day, type, title) => addItem(day, type, title)} onEdit={setEditingItem} onGenerate={generatePlan} onToggleDone={toggleItemDone} />; })}</div>
+            <div className="board-scroll">{dates.map((date) => { const key = toDateKey(date); return <DayColumn key={key} date={date} day={days.find((entry) => entry.day === key)} items={visibleItems.filter((item) => item.day === key)} generating={generatingDay === key} onDayChange={saveDay} onAdd={(day, type, title) => addItem(day, type, title)} onEdit={setEditingItem} onGenerate={generatePlan} onToggleDone={toggleItemDone} />; })}</div>
             <InboxPanel open={inboxOpen} items={inboxItems} onAdd={(title) => addItem(null, "idea", title)} onClose={() => setInboxOpen(false)} onEdit={setEditingItem} onToggleDone={toggleItemDone} />
             <DragOverlay>{activeItem ? <article className="flow-card overlay"><GripVertical size={14} /><span>{activeItem.title}</span></article> : null}</DragOverlay>
           </DndContext>

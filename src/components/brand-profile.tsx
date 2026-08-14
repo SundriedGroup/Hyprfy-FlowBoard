@@ -44,12 +44,12 @@ function mergeBrain(value: Json): BrandBrain {
       name: textValue(pillar.name), description: textValue(pillar.description),
       percentage: typeof pillar.percentage === "number" ? pillar.percentage : 25,
       formats: textValue(pillar.formats),
-      channels: Array.isArray(pillar.channels) ? pillar.channels.filter((channel): channel is string => typeof channel === "string") : [],
+      channels: Array.isArray(pillar.channels) ? pillar.channels.filter((channel): channel is string => typeof channel === "string").map((channel) => channel === "Newsletter" ? "Substack" : channel) : [],
     }];
   }) : [];
   const savedChannels = Array.isArray(raw.channels) ? raw.channels.map(jsonObject) : [];
   const channels = brandChannels.map((name) => {
-    const saved = savedChannels.find((channel) => channel.name === name);
+    const saved = savedChannels.find((channel) => channel.name === name || (name === "Substack" && channel.name === "Newsletter"));
     const fallback = defaults.channels.find((channel) => channel.name === name)!;
     return saved ? {
       name, enabled: typeof saved.enabled === "boolean" ? saved.enabled : fallback.enabled,
@@ -210,7 +210,7 @@ export function BrandProfile({ userId, onSaved }: BrandProfileProps) {
         <Field label="Primary goal" value={profile.brain.objectives.primaryGoal} placeholder="Growth, authority, community, leads or sales" onChange={(value) => updateObjective("primaryGoal", value)} />
         <Field label="Current offer" value={profile.brain.objectives.currentOffer} placeholder="What can someone buy, join or enquire about?" rows={2} onChange={(value) => updateObjective("currentOffer", value)} />
         <Field label="Calls to action" value={profile.brain.objectives.callsToAction} placeholder="The actions content can reasonably request" rows={2} onChange={(value) => updateObjective("callsToAction", value)} />
-        <Field label="Links and destinations" value={profile.brain.objectives.links} placeholder="Website, newsletter, product, booking page…" rows={2} onChange={(value) => updateObjective("links", value)} />
+        <Field label="Links and destinations" value={profile.brain.objectives.links} placeholder="Website, Substack, product, booking page…" rows={2} onChange={(value) => updateObjective("links", value)} />
         <Field label="Growth target" value={profile.brain.objectives.growthTarget} placeholder="A useful monthly or quarterly target" onChange={(value) => updateObjective("growthTarget", value)} />
         <Field label="Desired opportunities" value={profile.brain.objectives.opportunities} placeholder="Clients, speaking, partnerships, press…" rows={2} onChange={(value) => updateObjective("opportunities", value)} />
         <Field label="What conversion means" value={profile.brain.objectives.conversion} placeholder="The signal that the brand is working" rows={2} onChange={(value) => updateObjective("conversion", value)} />

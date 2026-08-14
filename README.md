@@ -10,12 +10,16 @@ Hyprfy Flowboard is a standalone, date-first planning workspace. It brings daily
 
 The app uses Supabase Auth and the existing `flow_days`, `flow_items`, and `flow_projects` tables. All browser data access runs as the authenticated user and is protected by the project's existing RLS policies.
 
-## v0.6 behaviour
+## v0.7.2 behaviour
 
 - Dashboard opens by default with the week's To-Do list, completion summary, workload, planned content, and seven-day overview
 - Persistent Brand Profile covering mission, audience, voice, objectives, content pillars, selected channels, and platform strategy
+- Database-driven Channel Profiles directory showing every supported platform, its saved role, cadence, formats, tone, CTA, linked pillars, planned content, and connected performance
 - Recurring Weekly Brief covering the real-life story, business focus, production capacity, audience questions, and reflection prompts
 - Brand Profile and Weekly Brief context automatically informs AI-generated daily plans
+- Reviewable AI-generated seven-day strategy with narrative, content mix, distribution logic, success signal, and daily recommendations
+- One-click application of the approved weekly plan into daily themes, finished content cards, hooks, social copy, capture notes, and To-Do items
+- Safe regeneration that preserves manual work and archives superseded AI-generated weekly cards
 - Social channel overview combines planned Flowboard content with live Instagram and Facebook performance from Meta
 - Seven-day growth comparisons, daily interaction trends, and publishing-volume changes against the previous seven days
 - Switchable 7- and 14-day rolling views with matching date navigation
@@ -24,7 +28,7 @@ The app uses Supabase Auth and the existing `flow_days`, `flow_items`, and `flow
 - Drag-and-drop rescheduling and within-section ordering
 - Inbox capture for unscheduled items, with drag-to-schedule
 - Card editing for title, description, stage, status, priority, duration, and scheduled day
-- Per-card channel planning for Instagram, TikTok, LinkedIn, YouTube, Facebook, X, newsletters, and blogs
+- Per-card channel planning for Instagram, TikTok, LinkedIn, YouTube, Facebook, X, Substack, and blogs
 - First-class Hook and Social Copy fields on every content card, saved with the card metadata
 - AI-generated daily social plans based on theme, context, focus, story opportunity, and notes
 - Publish-ready AI copy with X / Twitter treated as a priority launch and distribution channel
