@@ -7,7 +7,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
     <main className="login-shell">
       <section className="login-brand">
         <div className="brand-mark"><CalendarDays size={24} /></div>
-        <p className="eyebrow">Hyprfy LifeOS</p>
+        <p className="eyebrow">Hyprfy Flowboard</p>
         <h1>Plan around the life that is actually happening.</h1>
         <p>Each day is a workspace for context, ideas and the work that moves your story forward.</p>
         <div className="login-week" aria-hidden="true">
@@ -20,7 +20,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         <div className="login-card">
           <p className="eyebrow">Welcome back</p>
           <h2>Open your Flowboard</h2>
-          <p className="muted">Sign in with your Hyprfy LifeOS account.</p>
+          <p className="muted">Sign in to your Flowboard workspace.</p>
           {message && <p className="form-message">{message}</p>}
           <form>
             <label>Email<input name="email" type="email" autoComplete="email" placeholder="you@example.com" required /></label>

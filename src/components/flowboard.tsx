@@ -7,16 +7,19 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ArrowLeft, ArrowRight, CalendarDays, Check, GripVertical, Inbox as InboxIcon, LogOut, Plus, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, CalendarDays, Check, GripVertical, Inbox as InboxIcon, LogOut, Plus, Trash2, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { addDays, rollingDates, toDateKey } from "@/lib/date";
-import type { FlowDay, FlowItem } from "@/types/database";
+import type { FlowDay, FlowItem, Json } from "@/types/database";
 import { navItems } from "./icons";
 import { signOut } from "@/app/actions";
 
 const sections = ["idea", "script", "capture", "edit", "publish"] as const;
+const channelOptions = ["Instagram", "TikTok", "LinkedIn", "YouTube", "Facebook", "X", "Newsletter", "Blog"] as const;
 type Section = (typeof sections)[number];
 type SaveState = "idle" | "saving" | "saved" | "error";
+type ViewDays = 7 | 14;
+type ItemPatch = Pick<FlowItem, "title" | "description" | "status" | "priority" | "duration_minutes" | "item_type" | "day" | "metadata">;
 
 function containerId(day: string, type: Section) { return `${day}::${type}`; }
 function parseContainer(id: string) {
@@ -25,17 +28,31 @@ function parseContainer(id: string) {
   return { day, type };
 }
 
-function SortableCard({ item }: { item: FlowItem }) {
+function itemMetadata(item: FlowItem): Record<string, Json | undefined> {
+  return item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata) ? item.metadata : {};
+}
+
+function itemChannels(item: FlowItem) {
+  const channels = itemMetadata(item).channels;
+  return Array.isArray(channels) ? channels.filter((channel): channel is string => typeof channel === "string") : [];
+}
+
+function SortableCard({ item, onEdit }: { item: FlowItem; onEdit: (item: FlowItem) => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
+  const channels = itemChannels(item);
   return (
     <article ref={setNodeRef} className={`flow-card ${isDragging ? "dragging" : ""}`} style={{ transform: CSS.Transform.toString(transform), transition }}>
       <button className="drag-handle" aria-label={`Drag ${item.title}`} {...attributes} {...listeners}><GripVertical size={14} /></button>
-      <span>{item.title}</span>
+      <button className="card-content" onClick={() => onEdit(item)}>
+        <span>{item.title}</span>
+        {(item.status !== "open" || item.duration_minutes) && <small className="card-details">{item.status !== "open" ? item.status.replaceAll("_", " ") : ""}{item.status !== "open" && item.duration_minutes ? " · " : ""}{item.duration_minutes ? `${item.duration_minutes} min` : ""}</small>}
+        {channels.length > 0 && <span className="channel-tags">{channels.slice(0, 3).map((channel) => <small key={channel}>{channel}</small>)}{channels.length > 3 && <small>+{channels.length - 3}</small>}</span>}
+      </button>
     </article>
   );
 }
 
-function DropSection({ id, items, label, onAdd }: { id: string; items: FlowItem[]; label: string; onAdd: (title: string) => Promise<void> }) {
+function DropSection({ id, items, label, onAdd, onEdit }: { id: string; items: FlowItem[]; label: string; onAdd: (title: string) => Promise<void>; onEdit: (item: FlowItem) => void }) {
   const { setNodeRef, isOver } = useDroppable({ id });
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState("");
@@ -48,7 +65,7 @@ function DropSection({ id, items, label, onAdd }: { id: string; items: FlowItem[
     <section ref={setNodeRef} className={`planning-section ${isOver ? "is-over" : ""}`}>
       <div className="section-heading"><h3>{label}</h3><span>{items.length || ""}</span></div>
       <SortableContext items={items.map((item) => item.id)} strategy={verticalListSortingStrategy}>
-        <div className="card-list">{items.map((item) => <SortableCard item={item} key={item.id} />)}</div>
+        <div className="card-list">{items.map((item) => <SortableCard item={item} key={item.id} onEdit={onEdit} />)}</div>
       </SortableContext>
       {adding ? (
         <div className="quick-add-input">
@@ -66,7 +83,7 @@ function ContextField({ label, value, placeholder, multiline = true, onSave }: {
   return <label className="context-field"><span>{label}</span>{multiline ? <textarea rows={2} {...props} /> : <input {...props} />}</label>;
 }
 
-function DayColumn({ date, day, items, onDayChange, onAdd }: { date: Date; day?: FlowDay; items: FlowItem[]; onDayChange: (day: string, patch: Partial<FlowDay>) => Promise<void>; onAdd: (day: string, type: Section, title: string) => Promise<void> }) {
+function DayColumn({ date, day, items, onDayChange, onAdd, onEdit }: { date: Date; day?: FlowDay; items: FlowItem[]; onDayChange: (day: string, patch: Partial<FlowDay>) => Promise<void>; onAdd: (day: string, type: Section, title: string) => Promise<void>; onEdit: (item: FlowItem) => void }) {
   const key = toDateKey(date);
   const today = key === toDateKey(new Date());
   return (
@@ -85,14 +102,14 @@ function DayColumn({ date, day, items, onDayChange, onAdd }: { date: Date; day?:
       <div className="planning-blocks">
         {sections.map((type) => {
           const sectionItems = items.filter((item) => item.item_type === type).sort((a, b) => a.sort_order - b.sort_order);
-          return <DropSection key={type} id={containerId(key, type)} items={sectionItems} label={type} onAdd={(title) => onAdd(key, type, title)} />;
+          return <DropSection key={type} id={containerId(key, type)} items={sectionItems} label={type} onAdd={(title) => onAdd(key, type, title)} onEdit={onEdit} />;
         })}
       </div>
     </article>
   );
 }
 
-function InboxPanel({ open, items, onAdd, onClose }: { open: boolean; items: FlowItem[]; onAdd: (title: string) => Promise<void>; onClose: () => void }) {
+function InboxPanel({ open, items, onAdd, onClose, onEdit }: { open: boolean; items: FlowItem[]; onAdd: (title: string) => Promise<void>; onClose: () => void; onEdit: (item: FlowItem) => void }) {
   const { setNodeRef, isOver } = useDroppable({ id: "inbox" });
   const [title, setTitle] = useState("");
   async function submit() { const value = title.trim(); if (!value) return; setTitle(""); await onAdd(value); }
@@ -103,16 +120,86 @@ function InboxPanel({ open, items, onAdd, onClose }: { open: boolean; items: Flo
       <div className="inbox-add"><input value={title} onChange={(event) => setTitle(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void submit(); }} placeholder="Capture something…" /><button onClick={() => void submit()}><Plus size={15} /></button></div>
       <div ref={setNodeRef} className={`inbox-drop ${isOver ? "is-over" : ""}`}>
         <SortableContext items={items.map((item) => item.id)} strategy={verticalListSortingStrategy}>
-          {items.length ? items.map((item) => <SortableCard item={item} key={item.id} />) : <div className="empty-inbox"><InboxIcon size={22} /><p>Your inbox is clear.</p><span>Capture an idea here or drag a card back to unschedule it.</span></div>}
+          {items.length ? items.map((item) => <SortableCard item={item} key={item.id} onEdit={onEdit} />) : <div className="empty-inbox"><InboxIcon size={22} /><p>Your inbox is clear.</p><span>Capture an idea here or drag a card back to unschedule it.</span></div>}
         </SortableContext>
       </div>
     </aside>
   );
 }
 
+function ItemEditor({ item, saving, onClose, onSave, onDelete }: { item: FlowItem; saving: boolean; onClose: () => void; onSave: (patch: ItemPatch) => Promise<void>; onDelete: () => Promise<void> }) {
+  const metadata = itemMetadata(item);
+  const [title, setTitle] = useState(item.title);
+  const [description, setDescription] = useState(item.description ?? "");
+  const [status, setStatus] = useState(item.status);
+  const [priority, setPriority] = useState(item.priority);
+  const [duration, setDuration] = useState(item.duration_minutes?.toString() ?? "");
+  const [itemType, setItemType] = useState(item.item_type);
+  const [day, setDay] = useState(item.day ?? "");
+  const [channels, setChannels] = useState<string[]>(() => itemChannels(item));
+  const [channelPlan, setChannelPlan] = useState(typeof metadata.channel_plan === "string" ? metadata.channel_plan : "");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) { if (event.key === "Escape" && !saving) onClose(); }
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose, saving]);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const cleanTitle = title.trim();
+    if (!cleanTitle) return;
+    await onSave({
+      title: cleanTitle,
+      description: description.trim() || null,
+      status,
+      priority,
+      duration_minutes: duration ? Math.max(1, Number.parseInt(duration, 10) || 1) : null,
+      item_type: itemType,
+      day: day || null,
+      metadata: { ...metadata, channels, channel_plan: channelPlan.trim() || null },
+    });
+  }
+
+  function toggleChannel(channel: string) {
+    setChannels((current) => current.includes(channel) ? current.filter((entry) => entry !== channel) : [...current, channel]);
+  }
+
+  return (
+    <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose(); }}>
+      <section className="item-editor" role="dialog" aria-modal="true" aria-labelledby="item-editor-title">
+        <header><div><p className="eyebrow">Flow item</p><h2 id="item-editor-title">Edit card</h2></div><button type="button" onClick={onClose} disabled={saving} aria-label="Close editor"><X size={18} /></button></header>
+        <form onSubmit={(event) => void submit(event)}>
+          <label className="editor-field"><span>Title</span><input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} required /></label>
+          <label className="editor-field"><span>Description</span><textarea rows={4} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Add useful detail…" /></label>
+          <div className="editor-grid">
+            <label className="editor-field"><span>Stage</span><select value={itemType} onChange={(event) => setItemType(event.target.value)}>{sections.map((section) => <option key={section} value={section}>{section}</option>)}</select></label>
+            <label className="editor-field"><span>Status</span><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="open">Open</option><option value="done">Done</option><option value="archived">Archived</option></select></label>
+            <label className="editor-field"><span>Priority</span><select value={priority} onChange={(event) => setPriority(Number(event.target.value))}><option value={0}>None</option><option value={1}>Low</option><option value={2}>Medium</option><option value={3}>High</option></select></label>
+            <label className="editor-field"><span>Duration (minutes)</span><input type="number" min="1" step="1" inputMode="numeric" value={duration} onChange={(event) => setDuration(event.target.value)} placeholder="Optional" /></label>
+          </div>
+          <fieldset className="channel-field">
+            <legend>Channel plan</legend>
+            <p>Choose where this content will be published.</p>
+            <div className="channel-options">{channelOptions.map((channel) => <button type="button" key={channel} className={channels.includes(channel) ? "selected" : ""} aria-pressed={channels.includes(channel)} onClick={() => toggleChannel(channel)}>{channel}</button>)}</div>
+            <label className="editor-field"><span>Adaptation notes</span><textarea rows={3} value={channelPlan} onChange={(event) => setChannelPlan(event.target.value)} placeholder="e.g. Reel for Instagram, shorter hook for TikTok, professional angle for LinkedIn…" /></label>
+          </fieldset>
+          <label className="editor-field"><span>Scheduled day</span><input type="date" value={day} onChange={(event) => setDay(event.target.value)} /><small>Leave blank to return this card to the inbox.</small></label>
+          <footer>
+            {confirmDelete ? <button className="delete-button confirm" type="button" onClick={() => void onDelete()} disabled={saving}>Confirm delete</button> : <button className="delete-button" type="button" onClick={() => setConfirmDelete(true)} disabled={saving}><Trash2 size={15} />Delete</button>}
+            <div><button className="secondary-button" type="button" onClick={onClose} disabled={saving}>Cancel</button><button className="primary-button editor-save" type="submit" disabled={saving || !title.trim()}>{saving ? "Saving…" : "Save changes"}</button></div>
+          </footer>
+        </form>
+      </section>
+    </div>
+  );
+}
+
 export function Flowboard({ userId, userEmail }: { userId: string; userEmail: string }) {
   const supabase = useMemo(() => createClient(), []);
   const [offset, setOffset] = useState(0);
+  const [viewDays, setViewDays] = useState<ViewDays>(7);
   const [days, setDays] = useState<FlowDay[]>([]);
   const [items, setItems] = useState<FlowItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -120,8 +207,9 @@ export function Flowboard({ userId, userEmail }: { userId: string; userEmail: st
   const [error, setError] = useState<string | null>(null);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [editingItem, setEditingItem] = useState<FlowItem | null>(null);
   const startDate = useMemo(() => addDays(new Date(), offset), [offset]);
-  const dates = useMemo(() => rollingDates(startDate), [startDate]);
+  const dates = useMemo(() => rollingDates(startDate, viewDays), [startDate, viewDays]);
   const firstKey = toDateKey(dates[0]);
   const lastKey = toDateKey(dates[dates.length - 1]);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
@@ -129,13 +217,13 @@ export function Flowboard({ userId, userEmail }: { userId: string; userEmail: st
   const loadBoard = useCallback(async () => {
     setLoading(true); setError(null);
     const [dayResult, itemResult] = await Promise.all([
-      supabase.from("flow_days").select("*").gte("day", firstKey).lte("day", lastKey).order("day"),
-      supabase.from("flow_items").select("*").or(`day.is.null,and(day.gte.${firstKey},day.lte.${lastKey})`).order("sort_order"),
+      supabase.from("flow_days").select("*").eq("user_id", userId).gte("day", firstKey).lte("day", lastKey).order("day"),
+      supabase.from("flow_items").select("*").eq("user_id", userId).or(`day.is.null,and(day.gte.${firstKey},day.lte.${lastKey})`).order("sort_order"),
     ]);
     if (dayResult.error || itemResult.error) setError(dayResult.error?.message ?? itemResult.error?.message ?? "Could not load Flowboard.");
     else { setDays(dayResult.data); setItems(itemResult.data); }
     setLoading(false);
-  }, [firstKey, lastKey, supabase]);
+  }, [firstKey, lastKey, supabase, userId]);
 
   useEffect(() => {
     const loadTimer = window.setTimeout(() => void loadBoard(), 0);
@@ -159,6 +247,22 @@ export function Flowboard({ userId, userEmail }: { userId: string; userEmail: st
     const sortOrder = peers.length ? Math.max(...peers.map((item) => item.sort_order)) + 1024 : 1024;
     const { data, error: addError } = await supabase.from("flow_items").insert({ user_id: userId, day, item_type: type, title, sort_order: sortOrder }).select().single();
     if (addError) setError(addError.message); else setItems((current) => [...current, data]);
+  }
+
+  async function updateItem(item: FlowItem, patch: ItemPatch) {
+    setSaveState("saving"); setError(null);
+    const { data, error: updateError } = await supabase.from("flow_items").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", item.id).eq("user_id", userId).select().single();
+    if (updateError) { setSaveState("error"); setError(updateError.message); return; }
+    setItems((current) => current.map((entry) => entry.id === item.id ? data : entry));
+    setEditingItem(null); setSaveState("saved"); window.setTimeout(() => setSaveState("idle"), 1400);
+  }
+
+  async function deleteItem(item: FlowItem) {
+    setSaveState("saving"); setError(null);
+    const { error: deleteError } = await supabase.from("flow_items").delete().eq("id", item.id).eq("user_id", userId);
+    if (deleteError) { setSaveState("error"); setError(deleteError.message); return; }
+    setItems((current) => current.filter((entry) => entry.id !== item.id));
+    setEditingItem(null); setSaveState("saved"); window.setTimeout(() => setSaveState("idle"), 1400);
   }
 
   function locationFor(item: FlowItem) { return item.day ? containerId(item.day, sections.includes(item.item_type as Section) ? item.item_type as Section : "idea") : "inbox"; }
@@ -194,7 +298,7 @@ export function Flowboard({ userId, userEmail }: { userId: string; userEmail: st
       return update ? { ...item, ...update } : item;
     }));
     setSaveState("saving");
-    const results = await Promise.all(updates.map(({ id, ...patch }) => supabase.from("flow_items").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id)));
+    const results = await Promise.all(updates.map(({ id, ...patch }) => supabase.from("flow_items").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id).eq("user_id", userId)));
     const moveError = results.find((result) => result.error)?.error;
     if (moveError) { setError(moveError.message); setSaveState("error"); await loadBoard(); }
     else { setSaveState("saved"); window.setTimeout(() => setSaveState("idle"), 1400); }
@@ -205,16 +309,16 @@ export function Flowboard({ userId, userEmail }: { userId: string; userEmail: st
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="logo"><span>H</span><div><b>Hyprfy</b><small>LifeOS</small></div></div>
+        <div className="logo"><span>H</span><div><b>Hyprfy</b><small>Flowboard</small></div></div>
         <nav>{navItems.map(({ label, icon: Icon, active, inbox }) => <button className={active ? "active" : ""} key={label} onClick={() => inbox && setInboxOpen(true)} disabled={!active && !inbox}><Icon size={17} /><span>{label}</span>{inbox && inboxItems.length > 0 && <b className="nav-count">{inboxItems.length}</b>}</button>)}</nav>
-        <div className="sidebar-footer"><div className="avatar">{userEmail.slice(0, 1).toUpperCase() || "H"}</div><div><span>{userEmail || "Hyprfy user"}</span><small>Personal workspace</small></div><form action={signOut}><button aria-label="Sign out"><LogOut size={16} /></button></form></div>
+        <div className="sidebar-footer"><div className="avatar">{userEmail.slice(0, 1).toUpperCase() || "H"}</div><div><span>{userEmail || "Hyprfy user"}</span><small>Flowboard workspace</small></div><form action={signOut}><button aria-label="Sign out"><LogOut size={16} /></button></form></div>
       </aside>
       <main className="workspace">
         <header className="topbar">
           <div><p className="eyebrow">Planning surface</p><h1>Flowboard</h1></div>
           <div className="topbar-actions">
-            <div className="date-controls"><button onClick={() => setOffset((value) => value - 7)} aria-label="Previous dates"><ArrowLeft size={16} /></button><button onClick={() => setOffset(0)}>Today</button><button onClick={() => setOffset((value) => value + 7)} aria-label="Next dates"><ArrowRight size={16} /></button></div>
-            <div className="view-controls"><button className="active"><CalendarDays size={15} />7 Days</button><button disabled>14 Days</button><button disabled>Month</button></div>
+            <div className="date-controls"><button onClick={() => setOffset((value) => value - viewDays)} aria-label="Previous dates"><ArrowLeft size={16} /></button><button onClick={() => setOffset(0)}>Today</button><button onClick={() => setOffset((value) => value + viewDays)} aria-label="Next dates"><ArrowRight size={16} /></button></div>
+            <div className="view-controls"><button className={viewDays === 7 ? "active" : ""} aria-pressed={viewDays === 7} onClick={() => setViewDays(7)}><CalendarDays size={15} />7 Days</button><button className={viewDays === 14 ? "active" : ""} aria-pressed={viewDays === 14} onClick={() => setViewDays(14)}>14 Days</button><button disabled>Month</button></div>
             <button className="inbox-trigger" onClick={() => setInboxOpen(true)}><InboxIcon size={16} />Inbox{inboxItems.length > 0 && <span>{inboxItems.length}</span>}</button>
           </div>
           <div className={`save-state ${saveState}`}>{saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : saveState === "error" ? "Save failed" : ""}</div>
@@ -222,9 +326,10 @@ export function Flowboard({ userId, userEmail }: { userId: string; userEmail: st
         {error && <div className="error-banner"><span>{error}</span><button onClick={() => setError(null)}><X size={15} /></button></div>}
         {loading ? <div className="board-loading">Preparing your days…</div> : (
           <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={(event: DragStartEvent) => setActiveId(String(event.active.id))} onDragEnd={(event) => void handleDragEnd(event)} onDragCancel={() => setActiveId(null)}>
-            <div className="board-scroll">{dates.map((date) => { const key = toDateKey(date); return <DayColumn key={key} date={date} day={days.find((entry) => entry.day === key)} items={items.filter((item) => item.day === key)} onDayChange={saveDay} onAdd={(day, type, title) => addItem(day, type, title)} />; })}</div>
-            <InboxPanel open={inboxOpen} items={inboxItems} onAdd={(title) => addItem(null, "idea", title)} onClose={() => setInboxOpen(false)} />
+            <div className="board-scroll">{dates.map((date) => { const key = toDateKey(date); return <DayColumn key={key} date={date} day={days.find((entry) => entry.day === key)} items={items.filter((item) => item.day === key)} onDayChange={saveDay} onAdd={(day, type, title) => addItem(day, type, title)} onEdit={setEditingItem} />; })}</div>
+            <InboxPanel open={inboxOpen} items={inboxItems} onAdd={(title) => addItem(null, "idea", title)} onClose={() => setInboxOpen(false)} onEdit={setEditingItem} />
             <DragOverlay>{activeItem ? <article className="flow-card overlay"><GripVertical size={14} /><span>{activeItem.title}</span></article> : null}</DragOverlay>
+            {editingItem && <ItemEditor key={editingItem.id} item={editingItem} saving={saveState === "saving"} onClose={() => setEditingItem(null)} onSave={(patch) => updateItem(editingItem, patch)} onDelete={() => deleteItem(editingItem)} />}
           </DndContext>
         )}
       </main>
