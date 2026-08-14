@@ -10,25 +10,19 @@ Hyprfy Flowboard is a standalone, date-first planning workspace. It brings daily
 
 The app uses Supabase Auth and the existing `flow_days`, `flow_items`, and `flow_projects` tables. All browser data access runs as the authenticated user and is protected by the project's existing RLS policies.
 
-## v0.9.0 behaviour
+## v0.9.1 behaviour
 
 - Manual-first daily planning: create your own cards without daily AI generation
 - Simplified day context with only Topic and What’s happening
 - One platform per content card, with clear platform colour coding on the board
-- Dedicated Script and Social Copy fields stored directly with every content card
+- Every post requires one platform and contains Post Title, Script, Post Copy, and Capture fields
+- Add as many posts as required to any day or workflow stage
+- Dashboard readiness summaries replace the previous To-Do list
 - Adding a card opens its editor immediately so it can be completed in one flow
 
-- Dashboard opens by default with the week's To-Do list, completion summary, workload, planned content, and seven-day overview
+- Dashboard opens by default with content readiness, planned posts, the seven-day overview, and channel performance
 - Persistent Brand Profile covering mission, audience, voice, objectives, content pillars, selected channels, and platform strategy
 - Database-driven Channel Profiles directory showing every supported platform, its saved role, cadence, formats, tone, CTA, linked pillars, planned content, and connected performance
-- Recurring Weekly Brief covering the real-life story, business focus, production capacity, audience questions, and reflection prompts
-- Brand Profile is normalized into an AI operating brief covering identity, mission, audience, voice, objectives, boundaries, pillars, and active channel roles
-- Every new AI content recommendation is required to identify its content pillar, brand fit, audience value, and channel rationale
-- Weekly strategy previews and generated Flowboard cards visibly show how the saved Brand Profile influenced the recommendation
-- Daily and weekly AI planning use GPT-5.4 Mini for compatibility with Vercel AI Gateway free-tier credits
-- Reviewable AI-generated seven-day strategy with narrative, content mix, distribution logic, success signal, and daily recommendations
-- One-click application of the approved weekly plan into daily themes, finished content cards, hooks, social copy, capture notes, and To-Do items
-- Safe regeneration that preserves manual work and archives superseded AI-generated weekly cards
 - Social channel overview combines planned Flowboard content with live Instagram and Facebook performance from Meta
 - Seven-day growth comparisons, daily interaction trends, and publishing-volume changes against the previous seven days
 - Switchable 7- and 14-day rolling views with matching date navigation
@@ -39,14 +33,8 @@ The app uses Supabase Auth and the existing `flow_days`, `flow_items`, and `flow
 - Card editing for title, description, stage, status, priority, duration, and scheduled day
 - Per-card channel planning for Instagram, TikTok, LinkedIn, YouTube, Facebook, X, Substack, and blogs
 - First-class Hook and Social Copy fields on every content card, saved with the card metadata
-- AI-generated daily social plans based on theme, context, focus, story opportunity, and notes
-- Publish-ready AI copy with X / Twitter treated as a priority launch and distribution channel
-- Clear recommendations to post today, bank the story for the weekly vlog, or do both
-- Generated content workflow cards and a dedicated To-Do section
 - Card deletion with an explicit confirmation step
 - Optimistic updates with persisted `day`, `item_type`, and `sort_order`
-
-AI planning uses Vercel AI Gateway. Enable AI Gateway for the Vercel project; deployed functions use Vercel OIDC automatically. For non-Vercel environments, set `AI_GATEWAY_API_KEY`.
 
 ## Meta statistics
 

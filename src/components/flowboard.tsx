@@ -15,16 +15,15 @@ import { Dashboard } from "./dashboard";
 import { BrandProfile } from "./brand-profile";
 import { ChannelProfiles } from "./channel-profiles";
 import { navItems } from "./icons";
-import { WeeklyBrief } from "./weekly-brief";
 import { signOut } from "@/app/actions";
 
-const sections = ["task", "idea", "script", "capture", "edit", "publish"] as const;
-const sectionLabels: Record<Section, string> = { task: "To do", idea: "Idea", script: "Script", capture: "Capture", edit: "Edit", publish: "Publish" };
+const sections = ["idea", "script", "capture", "edit", "publish"] as const;
+const sectionLabels: Record<Section, string> = { idea: "Idea", script: "Script", capture: "Capture", edit: "Edit", publish: "Publish" };
 const channelOptions = ["Instagram", "TikTok", "LinkedIn", "YouTube", "Facebook", "X", "Substack", "Blog"] as const;
 type Section = (typeof sections)[number];
 type SaveState = "idle" | "saving" | "saved" | "error";
 type ViewDays = 7 | 14;
-type AppView = "dashboard" | "brand" | "channels" | "brief" | "flowboard";
+type AppView = "dashboard" | "brand" | "channels" | "flowboard";
 type ItemPatch = Pick<FlowItem, "title" | "description" | "status" | "priority" | "duration_minutes" | "item_type" | "day" | "metadata">;
 
 function containerId(day: string, type: Section) { return `${day}::${type}`; }
@@ -43,29 +42,29 @@ function itemChannels(item: FlowItem) {
   return Array.isArray(channels) ? channels.filter((channel): channel is string => typeof channel === "string").map((channel) => channel === "Newsletter" ? "Substack" : channel) : [];
 }
 
-function SortableCard({ item, onEdit, onToggleDone }: { item: FlowItem; onEdit: (item: FlowItem) => void; onToggleDone: (item: FlowItem) => Promise<void> }) {
+function SortableCard({ item, onEdit }: { item: FlowItem; onEdit: (item: FlowItem) => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
   const metadata = itemMetadata(item);
   const channels = itemChannels(item);
   const script = typeof metadata.script === "string" ? metadata.script : "";
   const socialCopy = typeof metadata.social_copy === "string" ? metadata.social_copy : "";
+  const capture = typeof metadata.capture_notes === "string" ? metadata.capture_notes : "";
   const platform = channels[0] ?? "";
   const platformKey = platform.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-");
   return (
     <article ref={setNodeRef} data-platform={platformKey || undefined} className={`flow-card ${isDragging ? "dragging" : ""} ${item.status === "done" ? "done" : ""}`} style={{ transform: CSS.Transform.toString(transform), transition }}>
       <button className="drag-handle" aria-label={`Drag ${item.title}`} {...attributes} {...listeners}><GripVertical size={14} /></button>
-      {item.item_type === "task" && <button className="todo-check" aria-label={item.status === "done" ? `Mark ${item.title} open` : `Mark ${item.title} done`} aria-pressed={item.status === "done"} onClick={() => void onToggleDone(item)}>{item.status === "done" ? <Check size={11} /> : null}</button>}
       <button className="card-content" onClick={() => onEdit(item)}>
         <span>{item.title}</span>
         {(item.status !== "open" || item.duration_minutes) && <small className="card-details">{item.status !== "open" ? item.status.replaceAll("_", " ") : ""}{item.status !== "open" && item.duration_minutes ? " · " : ""}{item.duration_minutes ? `${item.duration_minutes} min` : ""}</small>}
-        {(script || socialCopy) && <span className="card-ready-state">{script && <small>Script ready</small>}{socialCopy && <small>Copy ready</small>}</span>}
+        {(script || socialCopy || capture) && <span className="card-ready-state">{script && <small>Script</small>}{socialCopy && <small>Post copy</small>}{capture && <small>Capture</small>}</span>}
         {platform && <span className="channel-tags"><small>{platform === "X" ? "X / Twitter" : platform}</small></span>}
       </button>
     </article>
   );
 }
 
-function DropSection({ id, items, label, onAdd, onEdit, onToggleDone }: { id: string; items: FlowItem[]; label: string; onAdd: (title: string) => Promise<void>; onEdit: (item: FlowItem) => void; onToggleDone: (item: FlowItem) => Promise<void> }) {
+function DropSection({ id, items, label, onAdd, onEdit }: { id: string; items: FlowItem[]; label: string; onAdd: (title: string) => Promise<void>; onEdit: (item: FlowItem) => void }) {
   const { setNodeRef, isOver } = useDroppable({ id });
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState("");
@@ -78,7 +77,7 @@ function DropSection({ id, items, label, onAdd, onEdit, onToggleDone }: { id: st
     <section ref={setNodeRef} className={`planning-section ${isOver ? "is-over" : ""}`}>
       <div className="section-heading"><h3>{label}</h3><span>{items.length || ""}</span></div>
       <SortableContext items={items.map((item) => item.id)} strategy={verticalListSortingStrategy}>
-        <div className="card-list">{items.map((item) => <SortableCard item={item} key={item.id} onEdit={onEdit} onToggleDone={onToggleDone} />)}</div>
+        <div className="card-list">{items.map((item) => <SortableCard item={item} key={item.id} onEdit={onEdit} />)}</div>
       </SortableContext>
       {adding ? (
         <div className="quick-add-input">
@@ -96,7 +95,7 @@ function ContextField({ label, value, placeholder, multiline = true, onSave }: {
   return <label className="context-field"><span>{label}</span>{multiline ? <textarea rows={2} {...props} /> : <input {...props} />}</label>;
 }
 
-function DayColumn({ date, day, items, onDayChange, onAdd, onEdit, onToggleDone }: { date: Date; day?: FlowDay; items: FlowItem[]; onDayChange: (day: string, patch: Partial<FlowDay>) => Promise<void>; onAdd: (day: string, type: Section, title: string) => Promise<void>; onEdit: (item: FlowItem) => void; onToggleDone: (item: FlowItem) => Promise<void> }) {
+function DayColumn({ date, day, items, onDayChange, onAdd, onEdit }: { date: Date; day?: FlowDay; items: FlowItem[]; onDayChange: (day: string, patch: Partial<FlowDay>) => Promise<void>; onAdd: (day: string, type: Section, title: string) => Promise<void>; onEdit: (item: FlowItem) => void }) {
   const key = toDateKey(date);
   const today = key === toDateKey(new Date());
   return (
@@ -112,14 +111,14 @@ function DayColumn({ date, day, items, onDayChange, onAdd, onEdit, onToggleDone 
       <div className="planning-blocks">
         {sections.map((type) => {
           const sectionItems = items.filter((item) => item.item_type === type).sort((a, b) => a.sort_order - b.sort_order);
-          return <DropSection key={type} id={containerId(key, type)} items={sectionItems} label={sectionLabels[type]} onAdd={(title) => onAdd(key, type, title)} onEdit={onEdit} onToggleDone={onToggleDone} />;
+          return <DropSection key={type} id={containerId(key, type)} items={sectionItems} label={sectionLabels[type]} onAdd={(title) => onAdd(key, type, title)} onEdit={onEdit} />;
         })}
       </div>
     </article>
   );
 }
 
-function InboxPanel({ open, items, onAdd, onClose, onEdit, onToggleDone }: { open: boolean; items: FlowItem[]; onAdd: (title: string) => Promise<void>; onClose: () => void; onEdit: (item: FlowItem) => void; onToggleDone: (item: FlowItem) => Promise<void> }) {
+function InboxPanel({ open, items, onAdd, onClose, onEdit }: { open: boolean; items: FlowItem[]; onAdd: (title: string) => Promise<void>; onClose: () => void; onEdit: (item: FlowItem) => void }) {
   const { setNodeRef, isOver } = useDroppable({ id: "inbox" });
   const [title, setTitle] = useState("");
   async function submit() { const value = title.trim(); if (!value) return; setTitle(""); await onAdd(value); }
@@ -130,7 +129,7 @@ function InboxPanel({ open, items, onAdd, onClose, onEdit, onToggleDone }: { ope
       <div className="inbox-add"><input value={title} onChange={(event) => setTitle(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void submit(); }} placeholder="Capture something…" /><button onClick={() => void submit()}><Plus size={15} /></button></div>
       <div ref={setNodeRef} className={`inbox-drop ${isOver ? "is-over" : ""}`}>
         <SortableContext items={items.map((item) => item.id)} strategy={verticalListSortingStrategy}>
-          {items.length ? items.map((item) => <SortableCard item={item} key={item.id} onEdit={onEdit} onToggleDone={onToggleDone} />) : <div className="empty-inbox"><InboxIcon size={22} /><p>Your inbox is clear.</p><span>Capture an idea here or drag a card back to unschedule it.</span></div>}
+          {items.length ? items.map((item) => <SortableCard item={item} key={item.id} onEdit={onEdit} />) : <div className="empty-inbox"><InboxIcon size={22} /><p>Your inbox is clear.</p><span>Capture an idea here or drag a card back to unschedule it.</span></div>}
         </SortableContext>
       </div>
     </aside>
@@ -140,13 +139,13 @@ function InboxPanel({ open, items, onAdd, onClose, onEdit, onToggleDone }: { ope
 function ItemEditor({ item, saving, onClose, onSave, onDelete }: { item: FlowItem; saving: boolean; onClose: () => void; onSave: (patch: ItemPatch) => Promise<void>; onDelete: () => Promise<void> }) {
   const metadata = itemMetadata(item);
   const [title, setTitle] = useState(item.title);
-  const [description, setDescription] = useState(item.description ?? "");
   const [status, setStatus] = useState(item.status);
   const [itemType, setItemType] = useState(item.item_type);
   const [day, setDay] = useState(item.day ?? "");
   const [platform, setPlatform] = useState(() => itemChannels(item)[0] ?? "");
   const [script, setScript] = useState(typeof metadata.script === "string" ? metadata.script : "");
   const [socialCopy, setSocialCopy] = useState(typeof metadata.social_copy === "string" ? metadata.social_copy : "");
+  const [capture, setCapture] = useState(typeof metadata.capture_notes === "string" ? metadata.capture_notes : "");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
@@ -161,13 +160,13 @@ function ItemEditor({ item, saving, onClose, onSave, onDelete }: { item: FlowIte
     if (!cleanTitle) return;
     await onSave({
       title: cleanTitle,
-      description: description.trim() || null,
+      description: item.description,
       status,
       priority: item.priority,
       duration_minutes: item.duration_minutes,
       item_type: itemType,
       day: day || null,
-      metadata: { ...metadata, channels: platform ? [platform] : [], primary_channel: platform || null, script: script.trim() || null, social_copy: socialCopy.trim() || null },
+      metadata: { ...metadata, channels: platform ? [platform] : [], primary_channel: platform || null, script: script.trim() || null, social_copy: socialCopy.trim() || null, capture_notes: capture.trim() || null },
     });
   }
 
@@ -176,12 +175,11 @@ function ItemEditor({ item, saving, onClose, onSave, onDelete }: { item: FlowIte
       <section className="item-editor" role="dialog" aria-modal="true" aria-labelledby="item-editor-title">
         <header><div><p className="eyebrow">Flow item</p><h2 id="item-editor-title">Edit card</h2></div><button type="button" onClick={onClose} disabled={saving} aria-label="Close editor"><X size={18} /></button></header>
         <form onSubmit={(event) => void submit(event)}>
-          <label className="editor-field"><span>Title</span><input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} required /></label>
-          {itemType === "task" ? <label className="editor-field"><span>Task notes</span><textarea rows={4} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Add any useful detail…" /></label> : <>
-            <label className="editor-field"><span>Platform</span><select value={platform} onChange={(event) => setPlatform(event.target.value)}><option value="">Choose a platform</option>{channelOptions.map((channel) => <option key={channel} value={channel}>{channel === "X" ? "X / Twitter" : channel}</option>)}</select><small>The selected platform controls the card colour.</small></label>
-            <label className="editor-field content-copy-field"><span>Script</span><textarea rows={8} value={script} onChange={(event) => setScript(event.target.value)} placeholder="Write the full video, voiceover, carousel, or spoken script…" /></label>
-            <label className="editor-field content-copy-field"><span>Social copy</span><textarea rows={6} value={socialCopy} onChange={(event) => setSocialCopy(event.target.value)} placeholder="Write the caption or post that will be published with it…" /><small>{platform === "X" ? "Keep the post concise, or use this as the opening of a thread." : "This is the finished copy for the selected platform."}</small></label>
-          </>}
+          <label className="editor-field"><span>Post title</span><input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} required /></label>
+          <label className="editor-field"><span>Platform</span><select value={platform} onChange={(event) => setPlatform(event.target.value)} required><option value="">Choose a platform</option>{channelOptions.map((channel) => <option key={channel} value={channel}>{channel === "X" ? "X / Twitter" : channel}</option>)}</select><small>The selected platform controls the card colour.</small></label>
+          <label className="editor-field content-copy-field"><span>Script</span><textarea rows={8} value={script} onChange={(event) => setScript(event.target.value)} placeholder="Write the full video, voiceover, carousel, or spoken script…" /></label>
+          <label className="editor-field content-copy-field"><span>Post copy</span><textarea rows={6} value={socialCopy} onChange={(event) => setSocialCopy(event.target.value)} placeholder="Write the caption or post that will be published with it…" /><small>{platform === "X" ? "Keep the post concise, or use this as the opening of a thread." : "Finished copy for this platform."}</small></label>
+          <label className="editor-field content-copy-field"><span>Capture</span><textarea rows={5} value={capture} onChange={(event) => setCapture(event.target.value)} placeholder="Shot list, footage, photographs, assets, or capture instructions…" /></label>
           <div className="editor-grid">
             <label className="editor-field"><span>Stage</span><select value={itemType} onChange={(event) => setItemType(event.target.value)}>{sections.map((section) => <option key={section} value={section}>{sectionLabels[section]}</option>)}</select></label>
             <label className="editor-field"><span>Status</span><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="open">Open</option><option value="done">Done</option><option value="archived">Archived</option></select></label>
@@ -189,7 +187,7 @@ function ItemEditor({ item, saving, onClose, onSave, onDelete }: { item: FlowIte
           <label className="editor-field"><span>Scheduled day</span><input type="date" value={day} onChange={(event) => setDay(event.target.value)} /><small>Leave blank to return this card to the inbox.</small></label>
           <footer>
             {confirmDelete ? <button className="delete-button confirm" type="button" onClick={() => void onDelete()} disabled={saving}>Confirm delete</button> : <button className="delete-button" type="button" onClick={() => setConfirmDelete(true)} disabled={saving}><Trash2 size={15} />Delete</button>}
-            <div><button className="secondary-button" type="button" onClick={onClose} disabled={saving}>Cancel</button><button className="primary-button editor-save" type="submit" disabled={saving || !title.trim()}>{saving ? "Saving…" : "Save changes"}</button></div>
+            <div><button className="secondary-button" type="button" onClick={onClose} disabled={saving}>Cancel</button><button className="primary-button editor-save" type="submit" disabled={saving || !title.trim() || !platform}>{saving ? "Saving…" : "Save changes"}</button></div>
           </footer>
         </form>
       </section>
@@ -276,15 +274,6 @@ export function Flowboard({ userId, userEmail }: { userId: string; userEmail: st
     if (item) setEditingItem(item);
   }
 
-  async function toggleItemDone(item: FlowItem) {
-    setSaveState("saving"); setError(null);
-    const status = item.status === "done" ? "open" : "done";
-    const { data, error: updateError } = await supabase.from("flow_items").update({ status, updated_at: new Date().toISOString() }).eq("id", item.id).eq("user_id", userId).select().single();
-    if (updateError) { setError(updateError.message); setSaveState("error"); return; }
-    setItems((current) => current.map((entry) => entry.id === item.id ? data : entry));
-    setSaveState("saved"); window.setTimeout(() => setSaveState("idle"), 1400);
-  }
-
   async function updateItem(item: FlowItem, patch: ItemPatch) {
     setSaveState("saving"); setError(null);
     const { data, error: updateError } = await supabase.from("flow_items").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", item.id).eq("user_id", userId).select().single();
@@ -341,7 +330,7 @@ export function Flowboard({ userId, userEmail }: { userId: string; userEmail: st
   }
 
   const activeItem = items.find((item) => item.id === activeId);
-  const visibleItems = items.filter((item) => item.status !== "archived");
+  const visibleItems = items.filter((item) => item.status !== "archived" && item.item_type !== "task");
   const inboxItems = visibleItems.filter((item) => !item.day).sort((a, b) => a.sort_order - b.sort_order);
   function openView(view: AppView) {
     setActiveView(view);
@@ -351,18 +340,11 @@ export function Flowboard({ userId, userEmail }: { userId: string; userEmail: st
     setSaveState("saved");
     window.setTimeout(() => setSaveState("idle"), 1600);
   }
-  function handlePlanApplied() {
-    const weekday = new Date().getDay();
-    setOffset(-(weekday === 0 ? 6 : weekday - 1));
-    setViewDays(7);
-    setActiveView("flowboard");
-    void loadBoard();
-  }
-  const viewTitle = activeView === "dashboard" ? "Dashboard" : activeView === "brand" ? "Brand Profile" : activeView === "channels" ? "Channel Profiles" : activeView === "brief" ? "Weekly Brief" : "Flowboard";
+  const viewTitle = activeView === "dashboard" ? "Dashboard" : activeView === "brand" ? "Brand Profile" : activeView === "channels" ? "Channel Profiles" : "Flowboard";
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="logo"><span>H</span><div><b>HYPRFY</b><small>Flowboard · v0.9.0</small></div></div>
+        <div className="logo"><span>H</span><div><b>HYPRFY</b><small>Flowboard · v0.9.1</small></div></div>
         <nav>{navItems.map(({ label, icon: Icon, view, inbox }) => {
           const active = view === activeView;
           return <button className={active ? "active" : ""} key={label} onClick={() => view ? openView(view) : inbox ? setInboxOpen(true) : undefined} disabled={!view && !inbox}><Icon size={17} /><span>{label}</span>{inbox && inboxItems.length > 0 && <b className="nav-count">{inboxItems.length}</b>}</button>;
@@ -371,7 +353,7 @@ export function Flowboard({ userId, userEmail }: { userId: string; userEmail: st
       </aside>
       <main className="workspace">
         <header className="topbar">
-          <div><p className="eyebrow">Manual social planner · v0.9.0</p><h1>{viewTitle}</h1></div>
+          <div><p className="eyebrow">Manual social planner · v0.9.1</p><h1>{viewTitle}</h1></div>
           <div className="topbar-actions">
             {activeView === "flowboard" && <><div className="date-controls"><button onClick={() => setOffset((value) => value - viewDays)} aria-label="Previous dates"><ArrowLeft size={16} /></button><button onClick={() => setOffset(0)}>Today</button><button onClick={() => setOffset((value) => value + viewDays)} aria-label="Next dates"><ArrowRight size={16} /></button></div>
             <div className="view-controls"><button className={viewDays === 7 ? "active" : ""} aria-pressed={viewDays === 7} onClick={() => setViewDays(7)}><CalendarDays size={15} />7 Days</button><button className={viewDays === 14 ? "active" : ""} aria-pressed={viewDays === 14} onClick={() => setViewDays(14)}>14 Days</button><button disabled>Month</button></div></>}
@@ -380,10 +362,10 @@ export function Flowboard({ userId, userEmail }: { userId: string; userEmail: st
           <div className={`save-state ${saveState}`}>{saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : saveState === "error" ? "Save failed" : ""}</div>
         </header>
         {error && <div className="error-banner"><span>{error}</span><button onClick={() => setError(null)}><X size={15} /></button></div>}
-        {activeView === "dashboard" ? <Dashboard dates={dates.slice(0, 7)} days={days} items={visibleItems} loading={loading} onAddTask={async (title) => { await addItem(toDateKey(new Date()), "task", title); }} onEditItem={setEditingItem} onOpenFlowboard={() => openView("flowboard")} onToggleDone={toggleItemDone} /> : activeView === "brand" ? <BrandProfile userId={userId} onSaved={showSaved} /> : activeView === "channels" ? <ChannelProfiles userId={userId} dates={dates.slice(0, 7)} items={visibleItems} onEditStrategy={() => openView("brand")} /> : activeView === "brief" ? <WeeklyBrief userId={userId} onOpenFlowboard={() => openView("flowboard")} onPlanApplied={handlePlanApplied} onSaved={showSaved} /> : loading ? <div className="board-loading">Preparing your days…</div> : (
+        {activeView === "dashboard" ? <Dashboard dates={dates.slice(0, 7)} days={days} items={visibleItems} onOpenFlowboard={() => openView("flowboard")} /> : activeView === "brand" ? <BrandProfile userId={userId} onSaved={showSaved} /> : activeView === "channels" ? <ChannelProfiles userId={userId} dates={dates.slice(0, 7)} items={visibleItems} onEditStrategy={() => openView("brand")} /> : loading ? <div className="board-loading">Preparing your days…</div> : (
           <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={(event: DragStartEvent) => setActiveId(String(event.active.id))} onDragEnd={(event) => void handleDragEnd(event)} onDragCancel={() => setActiveId(null)}>
-            <div className="board-scroll">{dates.map((date) => { const key = toDateKey(date); return <DayColumn key={key} date={date} day={days.find((entry) => entry.day === key)} items={visibleItems.filter((item) => item.day === key)} onDayChange={saveDay} onAdd={(day, type, title) => addContentCard(day, type, title)} onEdit={setEditingItem} onToggleDone={toggleItemDone} />; })}</div>
-            <InboxPanel open={inboxOpen} items={inboxItems} onAdd={(title) => addContentCard(null, "idea", title)} onClose={() => setInboxOpen(false)} onEdit={setEditingItem} onToggleDone={toggleItemDone} />
+            <div className="board-scroll">{dates.map((date) => { const key = toDateKey(date); return <DayColumn key={key} date={date} day={days.find((entry) => entry.day === key)} items={visibleItems.filter((item) => item.day === key)} onDayChange={saveDay} onAdd={(day, type, title) => addContentCard(day, type, title)} onEdit={setEditingItem} />; })}</div>
+            <InboxPanel open={inboxOpen} items={inboxItems} onAdd={(title) => addContentCard(null, "idea", title)} onClose={() => setInboxOpen(false)} onEdit={setEditingItem} />
             <DragOverlay>{activeItem ? <article className="flow-card overlay"><GripVertical size={14} /><span>{activeItem.title}</span></article> : null}</DragOverlay>
           </DndContext>
         )}

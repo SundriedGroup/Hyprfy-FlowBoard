@@ -168,6 +168,7 @@ html, body { background:var(--canvas); color:var(--ink); }
 .summary-grid strong { margin-top:3px; font-size:25px; line-height:1.05; letter-spacing:-.045em; }
 .summary-grid small { margin-top:5px; overflow:hidden; color:#9ca097; font-size:9px; text-overflow:ellipsis; white-space:nowrap; }
 .dashboard-main-grid { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(330px,.8fr); gap:10px; margin-top:10px; }
+.dashboard-main-grid.single-panel { grid-template-columns:1fr; }
 .dashboard-panel { border:1px solid var(--line); border-radius:13px; background:#fff; }
 .dashboard-panel > header { min-height:68px; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:15px 18px; border-bottom:1px solid var(--line); }
 .dashboard-panel > header h3 { margin:4px 0 0; font-size:17px; letter-spacing:-.035em; }
