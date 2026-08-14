@@ -1,6 +1,8 @@
+import type { BrandDirection, ContentBrandAlignment } from "./brand-alignment";
+
 export type PlanDecision = "post_today" | "bank_for_weekly_vlog" | "post_and_bank";
 
-export interface GeneratedContentItem {
+export interface GeneratedContentItem extends ContentBrandAlignment {
   title: string;
   description: string;
   hook: string;
@@ -22,6 +24,7 @@ export interface GeneratedPlan {
   rationale: string;
   channels: string[];
   channelPlan: string;
+  brandDirection: BrandDirection;
   contentItems: GeneratedContentItem[];
   todoItems: GeneratedTodoItem[];
 }

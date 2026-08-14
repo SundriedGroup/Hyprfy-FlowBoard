@@ -1,6 +1,7 @@
 import { generateText, gateway, Output } from "ai";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { activeChannelNames, buildBrandContext } from "@/lib/brand-context";
 import type { FlowDay, Json } from "@/types/database";
 
 const channelSchema = z.enum(["Instagram", "TikTok", "LinkedIn", "YouTube", "Facebook", "X", "Substack", "Blog"]);
@@ -8,11 +9,21 @@ const requestSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("generate"), weekStart: z.string().date() }),
   z.object({ action: z.literal("apply"), weekStart: z.string().date() }),
 ]);
+const brandDirectionSchema = z.object({
+  missionAnchor: z.string().min(1).max(300).describe("The mission or positioning idea from the Brand Profile that anchors the week."),
+  audienceFocus: z.string().min(1).max(300).describe("The named audience segment and need this week serves."),
+  strategicObjective: z.string().min(1).max(300).describe("How the week advances the saved brand objective."),
+  voiceDirection: z.string().min(1).max(300).describe("The saved voice traits and writing constraints applied across the week."),
+});
 const contentItemSchema = z.object({
   title: z.string().min(1).max(120),
   description: z.string().min(1).max(800),
   hook: z.string().min(1).max(220),
   socialCopy: z.string().min(1).max(2200),
+  contentPillar: z.string().min(1).max(100).describe("The exact name of one saved content pillar."),
+  brandFit: z.string().min(1).max(400).describe("How the idea expresses the creator's mission, positioning, beliefs, or lived credibility."),
+  audienceValue: z.string().min(1).max(400).describe("The specific value delivered to the saved target audience."),
+  channelRationale: z.string().min(1).max(400).describe("Why the selected active channel and format fit this idea and the saved channel strategy."),
   callToAction: z.string().min(1).max(240),
   format: z.string().min(1).max(80),
   captureNotes: z.string().min(1).max(600),
@@ -39,9 +50,21 @@ const generatedPlanSchema = z.object({
   distributionLogic: z.string().min(1).max(700),
   successSignal: z.string().min(1).max(350),
   weeklyCallToAction: z.string().min(1).max(240),
+  brandDirection: brandDirectionSchema,
   days: z.object({ monday: daySchema, tuesday: daySchema, wednesday: daySchema, thursday: daySchema, friday: daySchema, saturday: daySchema, sunday: daySchema }),
 });
-const storedPlanSchema = generatedPlanSchema.extend({ id: z.string().uuid(), generatedAt: z.string().datetime(), appliedAt: z.string().datetime().nullable() });
+const storedContentItemSchema = contentItemSchema.extend({
+  contentPillar: contentItemSchema.shape.contentPillar.optional(),
+  brandFit: contentItemSchema.shape.brandFit.optional(),
+  audienceValue: contentItemSchema.shape.audienceValue.optional(),
+  channelRationale: contentItemSchema.shape.channelRationale.optional(),
+});
+const storedDaySchema = daySchema.extend({ contentItems: z.array(storedContentItemSchema).max(3) });
+const storedPlanSchema = generatedPlanSchema.extend({
+  brandDirection: brandDirectionSchema.optional(),
+  days: z.object({ monday: storedDaySchema, tuesday: storedDaySchema, wednesday: storedDaySchema, thursday: storedDaySchema, friday: storedDaySchema, saturday: storedDaySchema, sunday: storedDaySchema }),
+  id: z.string().uuid(), generatedAt: z.string().datetime(), appliedAt: z.string().datetime().nullable(),
+});
 const weekdayKeys = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const;
 
 function metadataObject(value: Json): Record<string, Json | undefined> {
@@ -52,16 +75,6 @@ function addDateDays(day: string, amount: number) {
   const date = new Date(`${day}T12:00:00Z`);
   date.setUTCDate(date.getUTCDate() + amount);
   return date.toISOString().slice(0, 10);
-}
-
-function enabledChannels(profile: { brand_brain: Json } | null) {
-  const channels = metadataObject(profile?.brand_brain ?? {}).channels;
-  if (!Array.isArray(channels)) return [];
-  return channels.flatMap((value) => {
-    const channel = metadataObject(value);
-    const parsedName = channelSchema.safeParse(channel.name);
-    return channel.enabled === true && parsedName.success ? [parsedName.data] : [];
-  });
 }
 
 function normalizePlan(plan: z.infer<typeof generatedPlanSchema>, enabled: string[]) {
@@ -77,6 +90,24 @@ function normalizePlan(plan: z.infer<typeof generatedPlanSchema>, enabled: strin
         return { ...item, channels, primaryChannel: channels.includes(item.primaryChannel) ? item.primaryChannel : channels[0] };
       }),
     }])) as typeof plan.days,
+  };
+}
+
+function restoreStoredPlan(plan: z.infer<typeof storedPlanSchema>): z.infer<typeof generatedPlanSchema> & { id: string; generatedAt: string; appliedAt: string | null } {
+  const legacyNote = "Regenerate this plan to add explicit brand alignment.";
+  return {
+    ...plan,
+    brandDirection: plan.brandDirection ?? { missionAnchor: legacyNote, audienceFocus: legacyNote, strategicObjective: legacyNote, voiceDirection: legacyNote },
+    days: Object.fromEntries(weekdayKeys.map((key) => [key, {
+      ...plan.days[key],
+      contentItems: plan.days[key].contentItems.map((item) => ({
+        ...item,
+        contentPillar: item.contentPillar ?? "Legacy plan",
+        brandFit: item.brandFit ?? legacyNote,
+        audienceValue: item.audienceValue ?? legacyNote,
+        channelRationale: item.channelRationale ?? legacyNote,
+      })),
+    }])) as z.infer<typeof generatedPlanSchema>["days"],
   };
 }
 
@@ -104,13 +135,14 @@ export async function POST(request: Request) {
     if (parsed.data.action === "generate") {
       const hasBrief = Object.entries(weekMetadata).some(([key, value]) => key !== "ai_week_plan" && typeof value === "string" && value.trim());
       if (!hasBrief) return Response.json({ error: "Add some real context to the Weekly Brief before generating a plan." }, { status: 400 });
-      const selectedChannels = enabledChannels(profile);
+      const brandContext = buildBrandContext(profile);
+      const selectedChannels = activeChannelNames(brandContext);
       const result = await generateText({
         model: gateway("openai/gpt-5.4-mini"),
         providerOptions: { gateway: { user: user.id, tags: ["feature:flowboard-week-plan"] } },
         output: Output.object({ name: "FlowboardWeeklyPlan", description: "A complete, realistic seven-day personal brand content strategy.", schema: generatedPlanSchema }),
-        system: "You are the senior personal brand strategist inside Hyprfy Flowboard. Build one coherent seven-day story from the creator's durable Brand Profile and current Weekly Brief. The plan must compound their positioning, serve the named audience, respect privacy boundaries, use only enabled channels, fit stated time and energy capacity, and balance growth, trust, community and conversion. Do not manufacture events, achievements or vulnerability. Use real happenings as source material. Do not force a post every day: use capture-only, banking and rest days where strategically useful. Produce 5–9 strong content items across the whole week, each with a specific hook, finished publish-ready social copy, CTA, format and capture instructions. Use X as the fast idea-testing layer when enabled. Make every platform choice intentional and explain the distribution logic. Tasks must be concrete production actions, not vague reminders.",
-        prompt: `Build the weekly plan for ${week.start_date} through ${week.end_date}. Empty fields are unknown and must not be guessed.\n\nENABLED CHANNELS\n${JSON.stringify(selectedChannels)}\n\nBRAND PROFILE\n${JSON.stringify(profile, null, 2)}\n\nWEEKLY BRIEF\n${JSON.stringify(weekMetadata, null, 2)}`,
+        system: "You are the senior personal brand strategist inside Hyprfy Flowboard. The BRAND OPERATING BRIEF is durable strategy; the WEEKLY BRIEF is current raw material and production reality. Build one coherent seven-day story that compounds the creator's positioning, mission and objective while serving the named audience in their saved voice. Every content item must use the exact name of one saved content pillar and explicitly explain brand fit, audience value and channel rationale. Do not merely repeat profile phrases: make the idea, hook, finished copy, CTA and format embody the profile. Respect privacy boundaries, use only active channels, and follow each channel's saved purpose, cadence, formats, tone and CTA. Do not manufacture events, achievements or vulnerability. Use real happenings as source material. Do not force a post every day: use capture-only, banking and rest where useful. Produce 5–9 strong content items across the week. Use X as a concise idea-testing layer when active. Tasks must be concrete production actions.",
+        prompt: `Build the weekly plan for ${week.start_date} through ${week.end_date}. Empty fields are unknown and must not be guessed.\n\nACTIVE CHANNELS\n${JSON.stringify(selectedChannels)}\n\nBRAND OPERATING BRIEF\n${JSON.stringify(brandContext, null, 2)}\n\nWEEKLY BRIEF\n${JSON.stringify(weekMetadata, null, 2)}`,
       });
       const plan = { ...normalizePlan(result.output, selectedChannels), id: crypto.randomUUID(), generatedAt: new Date().toISOString(), appliedAt: null };
       const { error: saveError } = await supabase.from("weeks").update({ metadata: { ...weekMetadata, ai_week_plan: plan } as unknown as Json, status: "ready", updated_at: new Date().toISOString() }).eq("id", week.id).eq("user_id", user.id);
@@ -120,7 +152,7 @@ export async function POST(request: Request) {
 
     const planResult = storedPlanSchema.safeParse(weekMetadata.ai_week_plan);
     if (!planResult.success) return Response.json({ error: "Generate the weekly plan before applying it to Flowboard." }, { status: 400 });
-    const plan = planResult.data;
+    const plan = restoreStoredPlan(planResult.data);
     if (plan.appliedAt) return Response.json({ plan, alreadyApplied: true });
 
     const existingItemsResult = await supabase.from("flow_items").select("id,metadata").eq("user_id", user.id).gte("day", week.start_date).lte("day", week.end_date);
@@ -133,7 +165,7 @@ export async function POST(request: Request) {
       return [
         ...dayPlan.contentItems.map((item, index) => ({
           user_id: user.id, day, item_type: item.stage, title: item.title, description: item.description, status: "open", duration_minutes: item.durationMinutes,
-          sort_order: 200000 + ((index + 1) * 1024), metadata: { ai_generated: true, weekly_plan_id: plan.id, generated_at: plan.generatedAt, recommendation: dayPlan.recommendation, hook: item.hook, social_copy: item.socialCopy, call_to_action: item.callToAction, format: item.format, capture_notes: item.captureNotes, primary_channel: item.primaryChannel, channels: item.channels },
+          sort_order: 200000 + ((index + 1) * 1024), metadata: { ai_generated: true, weekly_plan_id: plan.id, generated_at: plan.generatedAt, recommendation: dayPlan.recommendation, hook: item.hook, social_copy: item.socialCopy, call_to_action: item.callToAction, format: item.format, capture_notes: item.captureNotes, primary_channel: item.primaryChannel, channels: item.channels, content_pillar: item.contentPillar, brand_fit: item.brandFit, audience_value: item.audienceValue, channel_rationale: item.channelRationale },
         })),
         ...dayPlan.todoItems.map((item, index) => ({
           user_id: user.id, day, item_type: "task", title: item.title, description: item.description, status: "open", duration_minutes: item.durationMinutes,

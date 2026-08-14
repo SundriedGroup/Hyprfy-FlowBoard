@@ -1,7 +1,7 @@
 export type WeekdayKey = "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";
 export type WeeklyRecommendation = "post_today" | "bank_for_vlog" | "post_and_bank" | "capture_only" | "rest";
 
-export interface WeeklyPlanContentItem {
+export interface WeeklyPlanContentItem extends ContentBrandAlignment {
   title: string;
   description: string;
   hook: string;
@@ -42,5 +42,7 @@ export interface WeeklyPlan {
   distributionLogic: string;
   successSignal: string;
   weeklyCallToAction: string;
+  brandDirection?: BrandDirection;
   days: Record<WeekdayKey, WeeklyPlanDay>;
 }
+import type { BrandDirection, ContentBrandAlignment } from "./brand-alignment";

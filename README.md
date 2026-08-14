@@ -10,13 +10,21 @@ Hyprfy Flowboard is a standalone, date-first planning workspace. It brings daily
 
 The app uses Supabase Auth and the existing `flow_days`, `flow_items`, and `flow_projects` tables. All browser data access runs as the authenticated user and is protected by the project's existing RLS policies.
 
-## v0.7.3 behaviour
+## v0.9.0 behaviour
+
+- Manual-first daily planning: create your own cards without daily AI generation
+- Simplified day context with only Topic and What’s happening
+- One platform per content card, with clear platform colour coding on the board
+- Dedicated Script and Social Copy fields stored directly with every content card
+- Adding a card opens its editor immediately so it can be completed in one flow
 
 - Dashboard opens by default with the week's To-Do list, completion summary, workload, planned content, and seven-day overview
 - Persistent Brand Profile covering mission, audience, voice, objectives, content pillars, selected channels, and platform strategy
 - Database-driven Channel Profiles directory showing every supported platform, its saved role, cadence, formats, tone, CTA, linked pillars, planned content, and connected performance
 - Recurring Weekly Brief covering the real-life story, business focus, production capacity, audience questions, and reflection prompts
-- Brand Profile and Weekly Brief context automatically informs AI-generated daily plans
+- Brand Profile is normalized into an AI operating brief covering identity, mission, audience, voice, objectives, boundaries, pillars, and active channel roles
+- Every new AI content recommendation is required to identify its content pillar, brand fit, audience value, and channel rationale
+- Weekly strategy previews and generated Flowboard cards visibly show how the saved Brand Profile influenced the recommendation
 - Daily and weekly AI planning use GPT-5.4 Mini for compatibility with Vercel AI Gateway free-tier credits
 - Reviewable AI-generated seven-day strategy with narrative, content mix, distribution logic, success signal, and daily recommendations
 - One-click application of the approved weekly plan into daily themes, finished content cards, hooks, social copy, capture notes, and To-Do items
