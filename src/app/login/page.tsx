@@ -7,9 +7,9 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
     <main className="login-shell">
       <section className="login-brand">
         <div className="brand-mark"><CalendarDays size={24} /></div>
-        <p className="eyebrow">Hyprfy Flowboard</p>
-        <h1>Plan around the life that is actually happening.</h1>
-        <p>Each day is a workspace for context, ideas and the work that moves your story forward.</p>
+        <p className="eyebrow">Hyprfy Flowboard · v0.3.1</p>
+        <h1>Plan the moment.<br /><span>Publish the story.</span></h1>
+        <p>One social planning system for daily context, AI direction, content production and the work that moves your story forward.</p>
         <div className="login-week" aria-hidden="true">
           {["MON", "TUE", "WED", "THU", "FRI"].map((day, index) => (
             <div className={index === 1 ? "active" : ""} key={day}><span>{day}</span><b>{17 + index}</b></div>
