@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import type { SocialChannelStats, SocialStatsResponse } from "@/types/social-stats";
+import type { SocialChannelStats, SocialGrowthStats, SocialMetricTrend, SocialStatsResponse } from "@/types/social-stats";
 
 type MetaError = { error?: { message?: string } };
 type MetaPage = {
@@ -14,10 +14,15 @@ type MetaPosts = {
   data?: Array<{ created_time?: string; shares?: { count?: number }; comments?: { summary?: { total_count?: number } }; reactions?: { summary?: { total_count?: number } } }>;
 } & MetaError;
 type InstagramMedia = { data?: Array<{ timestamp?: string; like_count?: number; comments_count?: number }> } & MetaError;
-type InstagramInsights = { data?: Array<{ name?: string; values?: Array<{ value?: number }>; total_value?: { value?: number } }> } & MetaError;
+type InstagramInsights = { data?: Array<{ name?: string; values?: Array<{ value?: number; end_time?: string }>; total_value?: { value?: number } }> } & MetaError;
+
+function emptyTrend(): SocialMetricTrend { return { previous: null, series: [] }; }
+function emptyGrowth(): SocialGrowthStats {
+  return { followers: emptyTrend(), reach: emptyTrend(), views: emptyTrend(), interactions: emptyTrend(), contentPublished: emptyTrend() };
+}
 
 function emptyChannel(channel: "Instagram" | "Facebook", message?: string): SocialChannelStats {
-  return { channel, connected: false, accountName: null, followers: null, reach: null, views: null, interactions: null, contentPublished: null, message };
+  return { channel, connected: false, accountName: null, followers: null, reach: null, views: null, interactions: null, contentPublished: null, growth: emptyGrowth(), message };
 }
 
 async function metaFetch<T extends MetaError>(base: string, path: string, token: string, params: Record<string, string>) {
@@ -29,12 +34,31 @@ async function metaFetch<T extends MetaError>(base: string, path: string, token:
   return payload;
 }
 
-function insightTotal(payload: InstagramInsights, name: string) {
+function insightWindow(payload: InstagramInsights, name: string, periodStart: Date, mode: "sum" | "latest" = "sum") {
   const metric = payload.data?.find((entry) => entry.name === name);
-  if (!metric) return null;
-  if (typeof metric.total_value?.value === "number") return metric.total_value.value;
-  const values = metric.values?.map((entry) => entry.value).filter((value): value is number => typeof value === "number") ?? [];
-  return values.length ? values.reduce((total, value) => total + value, 0) : null;
+  if (!metric) return { current: null, previous: null, series: [] };
+  const timedValues = metric.values?.filter((entry): entry is { value: number; end_time?: string } => typeof entry.value === "number") ?? [];
+  const currentValues = timedValues.filter((entry) => !entry.end_time || new Date(entry.end_time) >= periodStart).map((entry) => entry.value);
+  const previousValues = timedValues.filter((entry) => entry.end_time && new Date(entry.end_time) < periodStart).map((entry) => entry.value);
+  const reduce = (values: number[]) => values.length ? (mode === "latest" ? values[values.length - 1] : values.reduce((total, value) => total + value, 0)) : null;
+  const current = reduce(currentValues) ?? (typeof metric.total_value?.value === "number" ? metric.total_value.value : null);
+  return { current, previous: reduce(previousValues), series: currentValues };
+}
+
+function postInteractions(post: NonNullable<MetaPosts["data"]>[number]) {
+  return (post.shares?.count ?? 0) + (post.comments?.summary?.total_count ?? 0) + (post.reactions?.summary?.total_count ?? 0);
+}
+
+function splitDatedValues<T>(entries: T[], dateFor: (entry: T) => string | undefined, valueFor: (entry: T) => number, periodStart: Date) {
+  const current = entries.filter((entry) => { const date = dateFor(entry); return date ? new Date(date) >= periodStart : false; });
+  const previous = entries.filter((entry) => { const date = dateFor(entry); return date ? new Date(date) < periodStart : false; });
+  return {
+    current: current.reduce((total, entry) => total + valueFor(entry), 0),
+    previous: previous.reduce((total, entry) => total + valueFor(entry), 0),
+    series: current.map(valueFor),
+    currentCount: current.length,
+    previousCount: previous.length,
+  };
 }
 
 export async function GET() {
@@ -43,9 +67,12 @@ export async function GET() {
   if (userError || !user) return Response.json({ error: "Your session has expired. Sign in again." }, { status: 401 });
 
   const now = new Date();
-  const since = new Date(now);
-  since.setUTCDate(since.getUTCDate() - 7);
-  const periodStart = since.toISOString();
+  const periodBoundary = new Date(now);
+  periodBoundary.setUTCDate(periodBoundary.getUTCDate() - 7);
+  const comparisonBoundary = new Date(now);
+  comparisonBoundary.setUTCDate(comparisonBoundary.getUTCDate() - 14);
+  const comparisonStart = comparisonBoundary.toISOString();
+  const periodStart = periodBoundary.toISOString();
   const periodEnd = now.toISOString();
   const token = process.env.META_ACCESS_TOKEN;
   const version = process.env.META_GRAPH_API_VERSION || "v23.0";
@@ -54,6 +81,7 @@ export async function GET() {
   if (!token) {
     const response: SocialStatsResponse = {
       configured: false,
+      comparisonStart,
       periodStart,
       periodEnd,
       channels: [emptyChannel("Instagram"), emptyChannel("Facebook")],
@@ -83,14 +111,17 @@ export async function GET() {
 
     const facebook: SocialChannelStats = {
       channel: "Facebook", connected: true, accountName: page.name ?? "Facebook Page", followers: page.followers_count ?? null,
-      reach: null, views: null, interactions: null, contentPublished: null,
+      reach: null, views: null, interactions: null, contentPublished: null, growth: emptyGrowth(),
     };
     try {
       const posts = await metaFetch<MetaPosts>(base, `${page.id}/published_posts`, pageToken, {
-        fields: "created_time,shares,comments.limit(0).summary(true),reactions.limit(0).summary(true)", since: periodStart, until: periodEnd, limit: "100",
+        fields: "created_time,shares,comments.limit(0).summary(true),reactions.limit(0).summary(true)", since: comparisonStart, until: periodEnd, limit: "100",
       });
-      facebook.contentPublished = posts.data?.length ?? 0;
-      facebook.interactions = posts.data?.reduce((total, post) => total + (post.shares?.count ?? 0) + (post.comments?.summary?.total_count ?? 0) + (post.reactions?.summary?.total_count ?? 0), 0) ?? 0;
+      const split = splitDatedValues(posts.data ?? [], (post) => post.created_time, postInteractions, periodBoundary);
+      facebook.contentPublished = split.currentCount;
+      facebook.interactions = split.current;
+      facebook.growth.contentPublished = { previous: split.previousCount, series: [] };
+      facebook.growth.interactions = { previous: split.previous, series: split.series };
     } catch {
       facebook.message = "Page connected; recent post engagement is unavailable for the current permissions.";
     }
@@ -99,30 +130,43 @@ export async function GET() {
     if (instagram) {
       instagramStats = {
         channel: "Instagram", connected: true, accountName: instagram.username ? `@${instagram.username}` : "Instagram", followers: instagram.followers_count ?? null,
-        reach: null, views: null, interactions: null, contentPublished: null,
+        reach: null, views: null, interactions: null, contentPublished: null, growth: emptyGrowth(),
       };
-      const [insightsResult, mediaResult] = await Promise.allSettled([
-        metaFetch<InstagramInsights>(base, `${instagram.id}/insights`, pageToken, { metric: "reach,views,total_interactions", period: "day", since: periodStart, until: periodEnd }),
-        metaFetch<InstagramMedia>(base, `${instagram.id}/media`, pageToken, { fields: "timestamp,like_count,comments_count", since: periodStart, until: periodEnd, limit: "100" }),
+      const [insightsResult, followersResult, mediaResult] = await Promise.allSettled([
+        metaFetch<InstagramInsights>(base, `${instagram.id}/insights`, pageToken, { metric: "reach,views,total_interactions", period: "day", since: comparisonStart, until: periodEnd }),
+        metaFetch<InstagramInsights>(base, `${instagram.id}/insights`, pageToken, { metric: "follower_count", period: "day", since: comparisonStart, until: periodEnd }),
+        metaFetch<InstagramMedia>(base, `${instagram.id}/media`, pageToken, { fields: "timestamp,like_count,comments_count", since: comparisonStart, until: periodEnd, limit: "100" }),
       ]);
       if (insightsResult.status === "fulfilled") {
-        instagramStats.reach = insightTotal(insightsResult.value, "reach");
-        instagramStats.views = insightTotal(insightsResult.value, "views");
-        instagramStats.interactions = insightTotal(insightsResult.value, "total_interactions");
+        for (const key of ["reach", "views", "interactions"] as const) {
+          const metricName = key === "interactions" ? "total_interactions" : key;
+          const window = insightWindow(insightsResult.value, metricName, periodBoundary);
+          instagramStats[key] = window.current;
+          instagramStats.growth[key] = { previous: window.previous, series: window.series };
+        }
+      }
+      if (followersResult.status === "fulfilled") {
+        const followerWindow = insightWindow(followersResult.value, "follower_count", periodBoundary, "latest");
+        instagramStats.growth.followers = { previous: followerWindow.previous, series: followerWindow.series };
       }
       if (mediaResult.status === "fulfilled") {
-        instagramStats.contentPublished = mediaResult.value.data?.length ?? 0;
-        if (instagramStats.interactions === null) instagramStats.interactions = mediaResult.value.data?.reduce((total, media) => total + (media.like_count ?? 0) + (media.comments_count ?? 0), 0) ?? 0;
+        const split = splitDatedValues(mediaResult.value.data ?? [], (media) => media.timestamp, (media) => (media.like_count ?? 0) + (media.comments_count ?? 0), periodBoundary);
+        instagramStats.contentPublished = split.currentCount;
+        instagramStats.growth.contentPublished = { previous: split.previousCount, series: [] };
+        if (instagramStats.interactions === null) {
+          instagramStats.interactions = split.current;
+          instagramStats.growth.interactions = { previous: split.previous, series: split.series };
+        }
       }
       if (insightsResult.status === "rejected" && mediaResult.status === "rejected") instagramStats.message = "Account connected; insights require Instagram insights permission.";
     }
 
-    const response: SocialStatsResponse = { configured: true, periodStart, periodEnd, channels: [instagramStats, facebook] };
+    const response: SocialStatsResponse = { configured: true, comparisonStart, periodStart, periodEnd, channels: [instagramStats, facebook] };
     return Response.json(response, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     console.error("Meta dashboard connection failed", error);
     const response: SocialStatsResponse = {
-      configured: true, periodStart, periodEnd,
+      configured: true, comparisonStart, periodStart, periodEnd,
       channels: [emptyChannel("Instagram"), emptyChannel("Facebook")],
       message: "The Meta connection could not be read. Check the token, Page access and account IDs.",
     };

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, BarChart3, CalendarDays, Check, CircleAlert, Clock3, ListTodo, Plus, Sparkles } from "lucide-react";
+import { ArrowDownRight, ArrowRight, ArrowUpRight, BarChart3, CalendarDays, Check, CircleAlert, Clock3, ListTodo, Minus, Plus, Sparkles } from "lucide-react";
 import { toDateKey } from "@/lib/date";
 import type { FlowDay, FlowItem, Json } from "@/types/database";
 import type { SocialChannelStats, SocialStatsResponse } from "@/types/social-stats";
@@ -33,8 +33,31 @@ function compactNumber(value: number | null) {
   return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value);
 }
 
-function channelStat(stats: SocialChannelStats | undefined, key: "followers" | "reach" | "interactions") {
-  return compactNumber(stats?.[key] ?? null);
+type PerformanceMetric = "followers" | "reach" | "views" | "interactions" | "contentPublished";
+
+function trendDetail(current: number | null, previous: number | null) {
+  if (current === null || previous === null) return { label: "No comparison", direction: "flat" as const };
+  if (previous === 0) return current === 0 ? { label: "No change", direction: "flat" as const } : { label: "New activity", direction: "up" as const };
+  const change = ((current - previous) / previous) * 100;
+  return { label: `${change > 0 ? "+" : ""}${Math.round(change)}%`, direction: change > 0 ? "up" as const : change < 0 ? "down" as const : "flat" as const };
+}
+
+function MetricCell({ stats, metric, label }: { stats?: SocialChannelStats; metric: PerformanceMetric; label: string }) {
+  const current = stats?.[metric] ?? null;
+  const detail = trendDetail(current, stats?.growth[metric].previous ?? null);
+  const Icon = detail.direction === "up" ? ArrowUpRight : detail.direction === "down" ? ArrowDownRight : Minus;
+  return <div><dt>{label}</dt><dd>{compactNumber(current)}</dd><small className={`metric-growth ${detail.direction}`}><Icon size={10} />{detail.label}</small></div>;
+}
+
+function MiniTrend({ values }: { values: number[] }) {
+  if (values.length < 2) return <div className="mini-trend empty"><span>Daily trend builds as Meta data arrives</span></div>;
+  const width = 120;
+  const height = 28;
+  const minimum = Math.min(...values);
+  const maximum = Math.max(...values);
+  const range = maximum - minimum || 1;
+  const points = values.map((value, index) => `${(index / (values.length - 1)) * width},${height - (((value - minimum) / range) * (height - 4)) - 2}`).join(" ");
+  return <div className="mini-trend"><svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-hidden="true"><polyline points={points} /></svg><span>Daily interactions</span></div>;
 }
 
 export function Dashboard({ dates, days, items, loading, onAddTask, onEditItem, onOpenFlowboard, onToggleDone }: DashboardProps) {
@@ -136,8 +159,9 @@ export function Dashboard({ dates, days, items, loading, onAddTask, onEditItem, 
             const planned = weekItems.filter((item) => itemChannels(item).includes(channel)).length;
             return <article key={channel} className={live?.connected ? "connected" : ""}>
               <div className="channel-stat-title"><span>{channel.slice(0, 2).toUpperCase()}</span><div><strong>{channel}</strong><small>{live?.accountName || (channel === "Instagram" || channel === "Facebook" ? "Awaiting Meta" : "Planning data")}</small></div></div>
-              <dl><div><dt>Followers</dt><dd>{channelStat(live, "followers")}</dd></div><div><dt>Reach</dt><dd>{channelStat(live, "reach")}</dd></div><div><dt>Interactions</dt><dd>{channelStat(live, "interactions")}</dd></div></dl>
-              <footer><span><BarChart3 size={12} /> {planned} planned</span>{live?.connected && <b>Live</b>}</footer>
+              <dl><MetricCell stats={live} metric="followers" label="Followers" /><MetricCell stats={live} metric="reach" label="Reach" /><MetricCell stats={live} metric="views" label="Views" /><MetricCell stats={live} metric="interactions" label="Interactions" /></dl>
+              <MiniTrend values={live?.growth.interactions.series ?? []} />
+              <footer><span><BarChart3 size={12} /> {planned} planned</span><span>{live?.contentPublished ?? "—"} published <b className={trendDetail(live?.contentPublished ?? null, live?.growth.contentPublished.previous ?? null).direction}>{trendDetail(live?.contentPublished ?? null, live?.growth.contentPublished.previous ?? null).label}</b></span>{live?.connected && <em>Live</em>}</footer>
             </article>;
           })}
         </div>

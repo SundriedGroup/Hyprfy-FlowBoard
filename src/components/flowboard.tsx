@@ -396,7 +396,7 @@ export function Flowboard({ userId, userEmail }: { userId: string; userEmail: st
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="logo"><span>H</span><div><b>HYPRFY</b><small>Flowboard · v0.4</small></div></div>
+        <div className="logo"><span>H</span><div><b>HYPRFY</b><small>Flowboard · v0.4.1</small></div></div>
         <nav>{navItems.map(({ label, icon: Icon, view, inbox }) => {
           const active = view === activeView;
           return <button className={active ? "active" : ""} key={label} onClick={() => view ? openView(view) : inbox ? setInboxOpen(true) : undefined} disabled={!view && !inbox}><Icon size={17} /><span>{label}</span>{inbox && inboxItems.length > 0 && <b className="nav-count">{inboxItems.length}</b>}</button>;
@@ -405,7 +405,7 @@ export function Flowboard({ userId, userEmail }: { userId: string; userEmail: st
       </aside>
       <main className="workspace">
         <header className="topbar">
-          <div><p className="eyebrow">Social planning system · v0.4</p><h1>{activeView === "dashboard" ? "Dashboard" : "Flowboard"}</h1></div>
+          <div><p className="eyebrow">Social planning system · v0.4.1</p><h1>{activeView === "dashboard" ? "Dashboard" : "Flowboard"}</h1></div>
           <div className="topbar-actions">
             {activeView === "flowboard" && <><div className="date-controls"><button onClick={() => setOffset((value) => value - viewDays)} aria-label="Previous dates"><ArrowLeft size={16} /></button><button onClick={() => setOffset(0)}>Today</button><button onClick={() => setOffset((value) => value + viewDays)} aria-label="Next dates"><ArrowRight size={16} /></button></div>
             <div className="view-controls"><button className={viewDays === 7 ? "active" : ""} aria-pressed={viewDays === 7} onClick={() => setViewDays(7)}><CalendarDays size={15} />7 Days</button><button className={viewDays === 14 ? "active" : ""} aria-pressed={viewDays === 14} onClick={() => setViewDays(14)}>14 Days</button><button disabled>Month</button></div></>}

@@ -10,10 +10,11 @@ Hyprfy Flowboard is a standalone, date-first planning workspace. It brings daily
 
 The app uses Supabase Auth and the existing `flow_days`, `flow_items`, and `flow_projects` tables. All browser data access runs as the authenticated user and is protected by the project's existing RLS policies.
 
-## v0.4 behaviour
+## v0.4.1 behaviour
 
 - Dashboard opens by default with the week's To-Do list, completion summary, workload, planned content, and seven-day overview
 - Social channel overview combines planned Flowboard content with live Instagram and Facebook performance from Meta
+- Seven-day growth comparisons, daily interaction trends, and publishing-volume changes against the previous seven days
 - Switchable 7- and 14-day rolling views with matching date navigation
 - Editable day theme, context, focus, story opportunity, and notes
 - Quick-add sections for Idea, Script, Capture, Edit, and Publish
