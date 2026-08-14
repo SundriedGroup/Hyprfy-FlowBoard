@@ -106,7 +106,7 @@ export async function POST(request: Request) {
       if (!hasBrief) return Response.json({ error: "Add some real context to the Weekly Brief before generating a plan." }, { status: 400 });
       const selectedChannels = enabledChannels(profile);
       const result = await generateText({
-        model: gateway("openai/gpt-5.6-luna"),
+        model: gateway("openai/gpt-5.4-mini"),
         providerOptions: { gateway: { user: user.id, tags: ["feature:flowboard-week-plan"] } },
         output: Output.object({ name: "FlowboardWeeklyPlan", description: "A complete, realistic seven-day personal brand content strategy.", schema: generatedPlanSchema }),
         system: "You are the senior personal brand strategist inside Hyprfy Flowboard. Build one coherent seven-day story from the creator's durable Brand Profile and current Weekly Brief. The plan must compound their positioning, serve the named audience, respect privacy boundaries, use only enabled channels, fit stated time and energy capacity, and balance growth, trust, community and conversion. Do not manufacture events, achievements or vulnerability. Use real happenings as source material. Do not force a post every day: use capture-only, banking and rest days where strategically useful. Produce 5–9 strong content items across the whole week, each with a specific hook, finished publish-ready social copy, CTA, format and capture instructions. Use X as the fast idea-testing layer when enabled. Make every platform choice intentional and explain the distribution logic. Tasks must be concrete production actions, not vague reminders.",
