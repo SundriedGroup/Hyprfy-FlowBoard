@@ -1,7 +1,8 @@
-import { CalendarDays, FolderKanban, Inbox, LayoutGrid, Settings } from "lucide-react";
+import { CalendarDays, FolderKanban, Inbox, LayoutDashboard, LayoutGrid, Settings } from "lucide-react";
 
 export const navItems = [
-  { label: "Flowboard", icon: LayoutGrid, active: true },
+  { label: "Dashboard", icon: LayoutDashboard, view: "dashboard" as const },
+  { label: "Flowboard", icon: LayoutGrid, view: "flowboard" as const },
   { label: "Calendar", icon: CalendarDays },
   { label: "Projects", icon: FolderKanban },
   { label: "Inbox", icon: Inbox, inbox: true },

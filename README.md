@@ -10,8 +10,10 @@ Hyprfy Flowboard is a standalone, date-first planning workspace. It brings daily
 
 The app uses Supabase Auth and the existing `flow_days`, `flow_items`, and `flow_projects` tables. All browser data access runs as the authenticated user and is protected by the project's existing RLS policies.
 
-## v0.3 behaviour
+## v0.4 behaviour
 
+- Dashboard opens by default with the week's To-Do list, completion summary, workload, planned content, and seven-day overview
+- Social channel overview combines planned Flowboard content with live Instagram and Facebook performance from Meta
 - Switchable 7- and 14-day rolling views with matching date navigation
 - Editable day theme, context, focus, story opportunity, and notes
 - Quick-add sections for Idea, Script, Capture, Edit, and Publish
@@ -26,3 +28,9 @@ The app uses Supabase Auth and the existing `flow_days`, `flow_items`, and `flow
 - Optimistic updates with persisted `day`, `item_type`, and `sort_order`
 
 AI planning uses Vercel AI Gateway. Enable AI Gateway for the Vercel project; deployed functions use Vercel OIDC automatically. For non-Vercel environments, set `AI_GATEWAY_API_KEY`.
+
+## Meta statistics
+
+Set `META_ACCESS_TOKEN` as a server-only Vercel environment variable. The app can discover the accessible Facebook Page and its linked Instagram professional account automatically. For Meta accounts with multiple Pages, also set `META_FACEBOOK_PAGE_ID`; `META_INSTAGRAM_ACCOUNT_ID` is available as an explicit fallback. Keep the Graph API version in `META_GRAPH_API_VERSION` so it can be upgraded independently of application code.
+
+The token needs access to the Page plus Instagram basic and insights permissions. Meta credentials are only read by the authenticated `/api/social-stats` route and are never exposed through `NEXT_PUBLIC_` variables.

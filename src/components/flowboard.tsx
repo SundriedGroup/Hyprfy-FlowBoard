@@ -12,6 +12,7 @@ import { createClient } from "@/lib/supabase/client";
 import { addDays, rollingDates, toDateKey } from "@/lib/date";
 import type { FlowDay, FlowItem, Json } from "@/types/database";
 import type { GeneratedPlan, PlanDecision } from "@/types/plan";
+import { Dashboard } from "./dashboard";
 import { navItems } from "./icons";
 import { signOut } from "@/app/actions";
 
@@ -21,6 +22,7 @@ const channelOptions = ["Instagram", "TikTok", "LinkedIn", "YouTube", "Facebook"
 type Section = (typeof sections)[number];
 type SaveState = "idle" | "saving" | "saved" | "error";
 type ViewDays = 7 | 14;
+type AppView = "dashboard" | "flowboard";
 type ItemPatch = Pick<FlowItem, "title" | "description" | "status" | "priority" | "duration_minutes" | "item_type" | "day" | "metadata">;
 
 function containerId(day: string, type: Section) { return `${day}::${type}`; }
@@ -225,6 +227,7 @@ function ItemEditor({ item, saving, onClose, onSave, onDelete }: { item: FlowIte
 
 export function Flowboard({ userId, userEmail }: { userId: string; userEmail: string }) {
   const supabase = useMemo(() => createClient(), []);
+  const [activeView, setActiveView] = useState<AppView>("dashboard");
   const [offset, setOffset] = useState(0);
   const [viewDays, setViewDays] = useState<ViewDays>(7);
   const [days, setDays] = useState<FlowDay[]>([]);
@@ -386,32 +389,39 @@ export function Flowboard({ userId, userEmail }: { userId: string; userEmail: st
 
   const activeItem = items.find((item) => item.id === activeId);
   const inboxItems = items.filter((item) => !item.day).sort((a, b) => a.sort_order - b.sort_order);
+  function openView(view: AppView) {
+    setActiveView(view);
+    if (view === "dashboard") { setOffset(0); setViewDays(7); }
+  }
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="logo"><span>H</span><div><b>HYPRFY</b><small>Flowboard · v0.3.1</small></div></div>
-        <nav>{navItems.map(({ label, icon: Icon, active, inbox }) => <button className={active ? "active" : ""} key={label} onClick={() => inbox && setInboxOpen(true)} disabled={!active && !inbox}><Icon size={17} /><span>{label}</span>{inbox && inboxItems.length > 0 && <b className="nav-count">{inboxItems.length}</b>}</button>)}</nav>
+        <div className="logo"><span>H</span><div><b>HYPRFY</b><small>Flowboard · v0.4</small></div></div>
+        <nav>{navItems.map(({ label, icon: Icon, view, inbox }) => {
+          const active = view === activeView;
+          return <button className={active ? "active" : ""} key={label} onClick={() => view ? openView(view) : inbox ? setInboxOpen(true) : undefined} disabled={!view && !inbox}><Icon size={17} /><span>{label}</span>{inbox && inboxItems.length > 0 && <b className="nav-count">{inboxItems.length}</b>}</button>;
+        })}</nav>
         <div className="sidebar-footer"><div className="avatar">{userEmail.slice(0, 1).toUpperCase() || "H"}</div><div><span>{userEmail || "Hyprfy user"}</span><small>Flowboard workspace</small></div><form action={signOut}><button aria-label="Sign out"><LogOut size={16} /></button></form></div>
       </aside>
       <main className="workspace">
         <header className="topbar">
-          <div><p className="eyebrow">Social planning system · v0.3.1</p><h1>Flowboard</h1></div>
+          <div><p className="eyebrow">Social planning system · v0.4</p><h1>{activeView === "dashboard" ? "Dashboard" : "Flowboard"}</h1></div>
           <div className="topbar-actions">
-            <div className="date-controls"><button onClick={() => setOffset((value) => value - viewDays)} aria-label="Previous dates"><ArrowLeft size={16} /></button><button onClick={() => setOffset(0)}>Today</button><button onClick={() => setOffset((value) => value + viewDays)} aria-label="Next dates"><ArrowRight size={16} /></button></div>
-            <div className="view-controls"><button className={viewDays === 7 ? "active" : ""} aria-pressed={viewDays === 7} onClick={() => setViewDays(7)}><CalendarDays size={15} />7 Days</button><button className={viewDays === 14 ? "active" : ""} aria-pressed={viewDays === 14} onClick={() => setViewDays(14)}>14 Days</button><button disabled>Month</button></div>
+            {activeView === "flowboard" && <><div className="date-controls"><button onClick={() => setOffset((value) => value - viewDays)} aria-label="Previous dates"><ArrowLeft size={16} /></button><button onClick={() => setOffset(0)}>Today</button><button onClick={() => setOffset((value) => value + viewDays)} aria-label="Next dates"><ArrowRight size={16} /></button></div>
+            <div className="view-controls"><button className={viewDays === 7 ? "active" : ""} aria-pressed={viewDays === 7} onClick={() => setViewDays(7)}><CalendarDays size={15} />7 Days</button><button className={viewDays === 14 ? "active" : ""} aria-pressed={viewDays === 14} onClick={() => setViewDays(14)}>14 Days</button><button disabled>Month</button></div></>}
             <button className="inbox-trigger" onClick={() => setInboxOpen(true)}><InboxIcon size={16} />Inbox{inboxItems.length > 0 && <span>{inboxItems.length}</span>}</button>
           </div>
           <div className={`save-state ${saveState}`}>{saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : saveState === "error" ? "Save failed" : ""}</div>
         </header>
         {error && <div className="error-banner"><span>{error}</span><button onClick={() => setError(null)}><X size={15} /></button></div>}
-        {loading ? <div className="board-loading">Preparing your days…</div> : (
+        {activeView === "dashboard" ? <Dashboard dates={dates.slice(0, 7)} days={days} items={items} loading={loading} onAddTask={(title) => addItem(toDateKey(new Date()), "task", title)} onEditItem={setEditingItem} onOpenFlowboard={() => openView("flowboard")} onToggleDone={toggleItemDone} /> : loading ? <div className="board-loading">Preparing your days…</div> : (
           <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={(event: DragStartEvent) => setActiveId(String(event.active.id))} onDragEnd={(event) => void handleDragEnd(event)} onDragCancel={() => setActiveId(null)}>
             <div className="board-scroll">{dates.map((date) => { const key = toDateKey(date); return <DayColumn key={key} date={date} day={days.find((entry) => entry.day === key)} items={items.filter((item) => item.day === key)} generating={generatingDay === key} onDayChange={saveDay} onAdd={(day, type, title) => addItem(day, type, title)} onEdit={setEditingItem} onGenerate={generatePlan} onToggleDone={toggleItemDone} />; })}</div>
             <InboxPanel open={inboxOpen} items={inboxItems} onAdd={(title) => addItem(null, "idea", title)} onClose={() => setInboxOpen(false)} onEdit={setEditingItem} onToggleDone={toggleItemDone} />
             <DragOverlay>{activeItem ? <article className="flow-card overlay"><GripVertical size={14} /><span>{activeItem.title}</span></article> : null}</DragOverlay>
-            {editingItem && <ItemEditor key={editingItem.id} item={editingItem} saving={saveState === "saving"} onClose={() => setEditingItem(null)} onSave={(patch) => updateItem(editingItem, patch)} onDelete={() => deleteItem(editingItem)} />}
           </DndContext>
         )}
+        {editingItem && <ItemEditor key={editingItem.id} item={editingItem} saving={saveState === "saving"} onClose={() => setEditingItem(null)} onSave={(patch) => updateItem(editingItem, patch)} onDelete={() => deleteItem(editingItem)} />}
       </main>
     </div>
   );
