@@ -1,43 +1,139 @@
-# Hyprfy Flowboard
+# Hyprfy Flowboard v0.2
 
-Hyprfy Flowboard is a standalone, date-first planning workspace. It brings daily context and content work together across a rolling 7- or 14-day view.
+A date-first planning surface for **Hyprfy LifeOS**.
 
-## Local setup
+Traditional Kanban boards organize work by status. Flowboard organizes work by **calendar day**. Each column is a day, each day carries real-world context, and work/content cards live underneath that context.
 
-1. Copy `.env.example` to `.env.local` and add your Flowboard Supabase project URL and publishable key.
-2. Install dependencies with `npm install`.
-3. Start the app with `npm run dev`.
+## What is in this revision
 
-The app uses Supabase Auth and the existing `flow_days`, `flow_items`, and `flow_projects` tables. All browser data access runs as the authenticated user and is protected by the project's existing RLS policies.
+- Rolling 7-day horizontal board starting from the selected anchor date
+- Today highlighting and previous / today / next navigation
+- Existing Supabase authentication with password or magic link
+- Editable daily context:
+  - What's happening
+  - Main focus (`main_outcome` in the database)
+  - Story opportunity
+- Sections inside each day:
+  - Ideas
+  - Script
+  - Capture
+  - Edit
+  - Publish
+- Quick-add cards inside each section
+- Drag a card between dates to reschedule it
+- Drag a card between sections to change its `item_type`
+- Drag before another card to reorder using `sort_order`
+- Mark cards done / open
+- Archive cards
+- Inbox for unscheduled (`day = null`) items
+- Reads existing `flow_projects` and displays project tags on linked items
+- Responsive, calm LifeOS-style interface
 
-## v0.9.1 behaviour
+## Existing backend
 
-- Manual-first daily planning: create your own cards without daily AI generation
-- Simplified day context with only Topic and What’s happening
-- One platform per content card, with clear platform colour coding on the board
-- Every post requires one platform and contains Post Title, Script, Post Copy, and Capture fields
-- Add as many posts as required to any day or workflow stage
-- Dashboard readiness summaries replace the previous To-Do list
-- Adding a card opens its editor immediately so it can be completed in one flow
+This app is designed for the existing Supabase project:
 
-- Dashboard opens by default with content readiness, planned posts, the seven-day overview, and channel performance
-- Persistent Brand Profile covering mission, audience, voice, objectives, content pillars, selected channels, and platform strategy
-- Database-driven Channel Profiles directory showing every supported platform, its saved role, cadence, formats, tone, CTA, linked pillars, planned content, and connected performance
-- Social channel overview combines planned Flowboard content with live Instagram and Facebook performance from Meta
-- Seven-day growth comparisons, daily interaction trends, and publishing-volume changes against the previous seven days
-- Switchable 7- and 14-day rolling views with matching date navigation
-- Editable day theme, context, focus, story opportunity, and notes
-- Quick-add sections for Idea, Script, Capture, Edit, and Publish
-- Drag-and-drop rescheduling and within-section ordering
-- Inbox capture for unscheduled items, with drag-to-schedule
-- Card editing for title, description, stage, status, priority, duration, and scheduled day
-- Per-card channel planning for Instagram, TikTok, LinkedIn, YouTube, Facebook, X, Substack, and blogs
-- First-class Hook and Social Copy fields on every content card, saved with the card metadata
-- Card deletion with an explicit confirmation step
-- Optimistic updates with persisted `day`, `item_type`, and `sort_order`
+**Hyprfy-lifeOS**
 
-## Meta statistics
+Project URL is already included in `.env.example`.
 
-Set `META_ACCESS_TOKEN` as a server-only Vercel environment variable. The app can discover the accessible Facebook Page and its linked Instagram professional account automatically. For Meta accounts with multiple Pages, also set `META_FACEBOOK_PAGE_ID`; `META_INSTAGRAM_ACCOUNT_ID` is available as an explicit fallback. Keep the Graph API version in `META_GRAPH_API_VERSION` so it can be upgraded independently of application code.
+It expects the existing tables:
 
-The token needs access to the Page plus Instagram basic and insights permissions. Meta credentials are only read by the authenticated `/api/social-stats` route and are never exposed through `NEXT_PUBLIC_` variables.
+- `flow_days`
+- `flow_items`
+- `flow_projects`
+
+The app also respects the existing optional links from `flow_items` to:
+
+- `moments`
+- `content_items`
+- `episodes`
+
+Row Level Security remains the source of truth for user ownership. Never expose a Supabase service-role key in this app.
+
+## Setup
+
+1. Copy the environment file:
+
+   ```bash
+   cp .env.example .env.local
+   ```
+
+2. In Supabase, copy the project's **publishable key** and add it to `.env.local`:
+
+   ```env
+   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_publishable_key_here
+   ```
+
+3. Install dependencies:
+
+   ```bash
+   npm install
+   ```
+
+4. Run locally:
+
+   ```bash
+   npm run dev
+   ```
+
+5. Open `http://localhost:3000` and sign in with the existing Hyprfy account.
+
+## Core data mapping
+
+### `flow_days`
+
+The interface uses:
+
+- `day`
+- `whats_happening`
+- `main_outcome`
+- `story_opportunity`
+- `theme` (supported by schema, not shown in the compact V1 UI yet)
+- `notes` (supported by schema, not shown in the compact V1 UI yet)
+- `capacity_minutes` (supported by schema, reserved for future capacity view)
+
+### `flow_items`
+
+The interface uses:
+
+- `day`
+- `item_type`
+- `title`
+- `status`
+- `sort_order`
+- `project_id`
+- `start_time`
+- `duration_minutes`
+
+Supported item types in the database are:
+
+`task`, `idea`, `script`, `capture`, `edit`, `publish`, `event`, `note`.
+
+The main Flowboard exposes the five content-creation sections. Inbox defaults new captures to `idea`.
+
+## V1 success test
+
+1. Sign in.
+2. Open Flowboard.
+3. Edit Monday's "What's happening" field and click elsewhere.
+4. Refresh — the context should persist.
+5. Add `Record Monday Mission` under Capture.
+6. Drag it to Tuesday Capture.
+7. Refresh — it should remain on Tuesday.
+8. Add an item from Inbox.
+9. Return to Flowboard and drag it into a day's section.
+10. Refresh — it should now be scheduled on that date.
+
+## Intentionally not built yet
+
+- Month calendar
+- 14/30-day density modes
+- Project management screen
+- Rich card drawer/editor
+- Google/Apple Calendar import
+- AI planning or story recommendations
+- Publishing integrations
+- Team collaboration
+
+Those should come after the date-first interaction is proven.
