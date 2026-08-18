@@ -40,4 +40,7 @@ export type ContentMeta = {
   channel?: string;
   plan?: string;
   copy?: string;
+  source_url?: string;
+  why_like?: string;
+  source_idea_id?: string;
 };

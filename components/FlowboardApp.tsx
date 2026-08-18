@@ -6,9 +6,11 @@ import { addDays, format, startOfDay } from "date-fns";
 import { supabase } from "@/lib/supabase";
 import type { ContentMeta, FlowDay, FlowItem } from "@/lib/types";
 
-const APP_VERSION = "0.9.7";
+const APP_VERSION = "0.9.8";
 
 type DraftBlock = { title: string; channel: string; plan: string };
+type DraftIdea = { title: string; channel: string; source_url: string; why_like: string };
+type View = "flowboard" | "inbox" | "ideas";
 
 function getMeta(item: FlowItem): ContentMeta {
   return (item.metadata ?? {}) as ContentMeta;
@@ -36,7 +38,9 @@ export function FlowboardApp() {
   const [error, setError] = useState<string | null>(null);
   const [newBlockDay, setNewBlockDay] = useState<string | null | undefined>(undefined);
   const [selectedItem, setSelectedItem] = useState<FlowItem | null>(null);
-  const [inboxOpen, setInboxOpen] = useState(false);
+  const [ideaModalOpen, setIdeaModalOpen] = useState(false);
+  const [selectedIdea, setSelectedIdea] = useState<FlowItem | null>(null);
+  const [view, setView] = useState<View>("flowboard");
 
   const visibleDates = useMemo(
     () => Array.from({ length: 7 }, (_, index) => addDays(anchorDate, index)),
@@ -63,18 +67,21 @@ export function FlowboardApp() {
     if (!session) return;
     setLoading(true);
     setError(null);
+
     const from = format(visibleDates[0], "yyyy-MM-dd");
     const to = format(visibleDates[visibleDates.length - 1], "yyyy-MM-dd");
-    const [dayResult, scheduledResult, inboxResult] = await Promise.all([
+
+    const [dayResult, scheduledResult, unscheduledResult] = await Promise.all([
       supabase.from("flow_days").select("*").gte("day", from).lte("day", to).order("day"),
       supabase.from("flow_items").select("*").gte("day", from).lte("day", to).neq("status", "archived").order("day").order("sort_order"),
       supabase.from("flow_items").select("*").is("day", null).neq("status", "archived").order("sort_order"),
     ]);
-    const firstError = dayResult.error || scheduledResult.error || inboxResult.error;
+
+    const firstError = dayResult.error || scheduledResult.error || unscheduledResult.error;
     if (firstError) setError(firstError.message);
     else {
       setDays((dayResult.data ?? []) as FlowDay[]);
-      setItems([...(scheduledResult.data ?? []), ...(inboxResult.data ?? [])] as FlowItem[]);
+      setItems([...(scheduledResult.data ?? []), ...(unscheduledResult.data ?? [])] as FlowItem[]);
     }
     setLoading(false);
   }
@@ -82,6 +89,7 @@ export function FlowboardApp() {
   async function saveDay(dayKey: string, field: "whats_happening" | "main_outcome" | "story_opportunity", value: string) {
     if (!session) return;
     const existing = days.find((d) => d.day === dayKey);
+
     if (existing) {
       const patch = { [field]: value || null, updated_at: new Date().toISOString() };
       setDays((current) => current.map((d) => d.id === existing.id ? { ...d, ...patch } : d));
@@ -89,19 +97,29 @@ export function FlowboardApp() {
       if (e) setError(e.message);
     } else {
       const { data, error: e } = await supabase.from("flow_days").insert({
-        user_id: session.user.id, day: dayKey, theme: null, main_outcome: null,
-        whats_happening: null, story_opportunity: null, notes: null,
-        capacity_minutes: null, metadata: {}, [field]: value || null
+        user_id: session.user.id,
+        day: dayKey,
+        theme: null,
+        main_outcome: null,
+        whats_happening: null,
+        story_opportunity: null,
+        notes: null,
+        capacity_minutes: null,
+        metadata: {},
+        [field]: value || null,
       }).select("*").single();
+
       if (e) setError(e.message);
       else if (data) setDays((current) => [...current, data as FlowDay]);
     }
   }
 
-  async function addBlock(day: string | null, draft: DraftBlock) {
+  async function addBlock(day: string | null, draft: DraftBlock, sourceIdeaId?: string) {
     if (!session || !draft.title.trim()) return;
-    const bucket = items.filter((item) => item.day === day);
+
+    const bucket = items.filter((item) => item.day === day && item.item_type !== "idea");
     const nextSort = bucket.reduce((max, item) => Math.max(max, Number(item.sort_order || 0)), 0) + 100;
+
     const { data, error: e } = await supabase.from("flow_items").insert({
       user_id: session.user.id,
       day,
@@ -109,8 +127,14 @@ export function FlowboardApp() {
       title: draft.title.trim(),
       description: null,
       sort_order: nextSort,
-      metadata: { channel: draft.channel.trim(), plan: draft.plan.trim(), copy: "" }
+      metadata: {
+        channel: draft.channel.trim(),
+        plan: draft.plan.trim(),
+        copy: "",
+        source_idea_id: sourceIdeaId,
+      },
     }).select("*").single();
+
     if (e) setError(e.message);
     else if (data) {
       const inserted = data as FlowItem;
@@ -120,42 +144,96 @@ export function FlowboardApp() {
     }
   }
 
+  async function addIdea(draft: DraftIdea) {
+    if (!session || !draft.title.trim()) return;
+
+    const ideaItems = items.filter((item) => item.day === null && item.item_type === "idea");
+    const nextSort = ideaItems.reduce((max, item) => Math.max(max, Number(item.sort_order || 0)), 0) + 100;
+
+    const { data, error: e } = await supabase.from("flow_items").insert({
+      user_id: session.user.id,
+      day: null,
+      item_type: "idea",
+      title: draft.title.trim(),
+      description: null,
+      sort_order: nextSort,
+      metadata: {
+        channel: draft.channel.trim(),
+        source_url: draft.source_url.trim(),
+        why_like: draft.why_like.trim(),
+      },
+    }).select("*").single();
+
+    if (e) setError(e.message);
+    else if (data) {
+      setItems((current) => [...current, data as FlowItem]);
+      setIdeaModalOpen(false);
+    }
+  }
+
   async function updateItem(item: FlowItem, patch: Partial<FlowItem>) {
     const next = { ...patch, updated_at: new Date().toISOString() };
-    setItems((current) => current.map((candidate) => candidate.id === item.id ? { ...candidate, ...next } : candidate));
+
+    setItems((current) =>
+      current.map((candidate) => candidate.id === item.id ? { ...candidate, ...next } : candidate)
+    );
+
     setSelectedItem((current) => current?.id === item.id ? { ...current, ...next } : current);
+    setSelectedIdea((current) => current?.id === item.id ? { ...current, ...next } : current);
+
     const { error: e } = await supabase.from("flow_items").update(next).eq("id", item.id);
-    if (e) { setError(e.message); void loadData(); }
+    if (e) {
+      setError(e.message);
+      void loadData();
+    }
   }
 
   async function moveItem(itemId: string, day: string | null) {
     const item = items.find((candidate) => candidate.id === itemId);
-    if (!item || item.day === day) return;
-    const bucket = items.filter((candidate) => candidate.day === day && candidate.id !== itemId);
+    if (!item || item.item_type === "idea" || item.day === day) return;
+
+    const bucket = items.filter((candidate) => candidate.day === day && candidate.item_type !== "idea" && candidate.id !== itemId);
     const sort_order = bucket.reduce((max, candidate) => Math.max(max, Number(candidate.sort_order || 0)), 0) + 100;
+
     await updateItem(item, { day, sort_order });
   }
 
   async function saveDetail(item: FlowItem, title: string, channel: string, plan: string, copy: string) {
     await updateItem(item, {
       title,
-      metadata: { ...(item.metadata ?? {}), channel, plan, copy }
+      metadata: { ...(item.metadata ?? {}), channel, plan, copy },
+    });
+  }
+
+  async function saveIdeaDetail(item: FlowItem, title: string, channel: string, source_url: string, why_like: string) {
+    await updateItem(item, {
+      title,
+      metadata: { ...(item.metadata ?? {}), channel, source_url, why_like },
     });
   }
 
   async function archiveItem(item: FlowItem) {
     setItems((current) => current.filter((candidate) => candidate.id !== item.id));
     setSelectedItem(null);
+    setSelectedIdea(null);
+
     const { error: e } = await supabase.from("flow_items").update({
-      status: "archived", updated_at: new Date().toISOString()
+      status: "archived",
+      updated_at: new Date().toISOString(),
     }).eq("id", item.id);
+
     if (e) setError(e.message);
   }
 
   if (!authReady) return <div className="center-screen">Loading Flowboard…</div>;
   if (!session) return <AuthScreen />;
 
-  const inboxItems = items.filter((item) => item.day === null && item.status !== "archived");
+  const inboxItems = items.filter(
+    (item) => item.day === null && item.item_type !== "idea" && item.status !== "archived"
+  );
+  const ideaItems = items.filter(
+    (item) => item.day === null && item.item_type === "idea" && item.status !== "archived"
+  );
 
   return (
     <div className="app-shell">
@@ -165,15 +243,22 @@ export function FlowboardApp() {
             <div className="brand-mark">H</div>
             <div><strong>Hyprfy</strong><span>Flowboard</span></div>
           </div>
+
           <nav>
-            <button className={`nav-item ${!inboxOpen ? "active" : ""}`} onClick={() => setInboxOpen(false)}>Flowboard</button>
-            <button className={`nav-item ${inboxOpen ? "active" : ""}`} onClick={() => setInboxOpen(true)}>
+            <button className={`nav-item ${view === "flowboard" ? "active" : ""}`} onClick={() => setView("flowboard")}>
+              Flowboard
+            </button>
+            <button className={`nav-item ${view === "ideas" ? "active" : ""}`} onClick={() => setView("ideas")}>
+              Ideas <span className="count">{ideaItems.length}</span>
+            </button>
+            <button className={`nav-item ${view === "inbox" ? "active" : ""}`} onClick={() => setView("inbox")}>
               Inbox <span className="count">{inboxItems.length}</span>
             </button>
             <button className="nav-item muted" disabled>Calendar <span>Soon</span></button>
             <button className="nav-item muted" disabled>Projects <span>Soon</span></button>
           </nav>
         </div>
+
         <div className="sidebar-footer">
           <span className="version-badge">v{APP_VERSION}</span>
           <button className="text-button" onClick={() => void supabase.auth.signOut()}>Sign out</button>
@@ -184,40 +269,41 @@ export function FlowboardApp() {
         <header className="topbar">
           <div>
             <div className="eyebrow">HYPRFY LIFEOS</div>
-            <h1>{inboxOpen ? "Inbox" : "Flowboard"}</h1>
+            <h1>{view === "flowboard" ? "Flowboard" : view === "ideas" ? "Ideas" : "Inbox"}</h1>
           </div>
+
           <div className="topbar-actions">
             <span className="build-stamp">BUILD v{APP_VERSION}</span>
-            {!inboxOpen && <>
+
+            {view === "flowboard" && <>
               <button onClick={() => setAnchorDate((d) => addDays(d, -7))}>←</button>
               <button onClick={() => setAnchorDate(startOfDay(new Date()))}>Today</button>
               <button onClick={() => setAnchorDate((d) => addDays(d, 7))}>→</button>
             </>}
+
+            {view === "ideas" && (
+              <button className="primary-button" onClick={() => setIdeaModalOpen(true)}>+ Capture idea</button>
+            )}
+
+            {view === "inbox" && (
+              <button className="primary-button" onClick={() => setNewBlockDay(null)}>+ Add block</button>
+            )}
           </div>
         </header>
 
         {error && <div className="error-banner">{error}</div>}
 
-        {inboxOpen ? (
-          <div className="inbox-page">
-            <div className="inbox-header">
-              <div><div className="eyebrow">UNSCHEDULED</div><h2>Ideas waiting for a day</h2></div>
-              <button className="primary-button" onClick={() => setNewBlockDay(null)}>+ Add block</button>
-            </div>
-            <div className="inbox-grid">
-              {inboxItems.length === 0
-                ? <div className="empty-state">Nothing waiting. Capture an idea when it arrives.</div>
-                : inboxItems.map((item) => <ContentCard key={item.id} item={item} onOpen={setSelectedItem} />)}
-            </div>
-          </div>
-        ) : (
+        {view === "flowboard" && (
           <div className="board-wrap">
             <div className="board">
               {visibleDates.map((date) => {
                 const dayKey = format(date, "yyyy-MM-dd");
                 const dayData = days.find((d) => d.day === dayKey);
-                const dayItems = items.filter((item) => item.day === dayKey && item.status !== "archived");
+                const dayItems = items.filter(
+                  (item) => item.day === dayKey && item.item_type !== "idea" && item.status !== "archived"
+                );
                 const isToday = dayKey === format(new Date(), "yyyy-MM-dd");
+
                 return (
                   <DayColumn
                     key={dayKey}
@@ -237,14 +323,66 @@ export function FlowboardApp() {
           </div>
         )}
 
+        {view === "ideas" && (
+          <IdeasPage
+            items={ideaItems}
+            onOpen={setSelectedIdea}
+            onAdd={() => setIdeaModalOpen(true)}
+          />
+        )}
+
+        {view === "inbox" && (
+          <InboxPage
+            items={inboxItems}
+            onOpen={setSelectedItem}
+            onAdd={() => setNewBlockDay(null)}
+          />
+        )}
+
         {loading && <div className="sync-pill">Syncing…</div>}
       </main>
 
       {newBlockDay !== undefined && (
-        <NewBlockModal day={newBlockDay} onClose={() => setNewBlockDay(undefined)} onSave={addBlock} />
+        <NewBlockModal
+          day={newBlockDay}
+          onClose={() => setNewBlockDay(undefined)}
+          onSave={(day, draft) => addBlock(day, draft)}
+        />
       )}
+
+      {ideaModalOpen && (
+        <NewIdeaModal
+          onClose={() => setIdeaModalOpen(false)}
+          onSave={addIdea}
+        />
+      )}
+
       {selectedItem && (
-        <DetailDrawer item={selectedItem} onClose={() => setSelectedItem(null)} onSave={saveDetail} onArchive={archiveItem} />
+        <DetailDrawer
+          item={selectedItem}
+          onClose={() => setSelectedItem(null)}
+          onSave={saveDetail}
+          onArchive={archiveItem}
+        />
+      )}
+
+      {selectedIdea && (
+        <IdeaDrawer
+          item={selectedIdea}
+          onClose={() => setSelectedIdea(null)}
+          onSave={saveIdeaDetail}
+          onArchive={archiveItem}
+          onTurnIntoContent={async (idea) => {
+            const m = getMeta(idea);
+            await addBlock(null, {
+              title: idea.title,
+              channel: m.channel ?? "Instagram",
+              plan: m.why_like ?? "",
+            }, idea.id);
+            setSelectedIdea(null);
+            setView("inbox");
+          }}
+        />
       )}
     </div>
   );
@@ -281,24 +419,9 @@ function DayColumn({ dayKey, date, data, items, isToday, onSaveDay, onAdd, onOpe
         </div>
 
         <div className="context-fields">
-          <DayField
-            label="What's happening"
-            placeholder="Meetings, events, training, life…"
-            value={data?.whats_happening ?? ""}
-            onSave={(v) => onSaveDay(dayKey, "whats_happening", v)}
-          />
-          <DayField
-            label="Main focus"
-            placeholder="What matters most today?"
-            value={data?.main_outcome ?? ""}
-            onSave={(v) => onSaveDay(dayKey, "main_outcome", v)}
-          />
-          <DayField
-            label="Story opportunity"
-            placeholder="What could this day become a story about?"
-            value={data?.story_opportunity ?? ""}
-            onSave={(v) => onSaveDay(dayKey, "story_opportunity", v)}
-          />
+          <DayField label="What's happening" placeholder="Meetings, events, training, life…" value={data?.whats_happening ?? ""} onSave={(v) => onSaveDay(dayKey, "whats_happening", v)} />
+          <DayField label="Main focus" placeholder="What matters most today?" value={data?.main_outcome ?? ""} onSave={(v) => onSaveDay(dayKey, "main_outcome", v)} />
+          <DayField label="Story opportunity" placeholder="What could this day become a story about?" value={data?.story_opportunity ?? ""} onSave={(v) => onSaveDay(dayKey, "story_opportunity", v)} />
         </div>
       </div>
 
@@ -309,9 +432,7 @@ function DayColumn({ dayKey, date, data, items, isToday, onSaveDay, onAdd, onOpe
         </div>
 
         <div className="cards">
-          {items.map((item) => (
-            <ContentCard key={item.id} item={item} onOpen={onOpen} />
-          ))}
+          {items.map((item) => <ContentCard key={item.id} item={item} onOpen={onOpen} />)}
         </div>
 
         <button className="add-block" onClick={onAdd}>+ Add block</button>
@@ -321,25 +442,44 @@ function DayColumn({ dayKey, date, data, items, isToday, onSaveDay, onAdd, onOpe
 }
 
 function DayField({ label, placeholder, value, onSave }: {
-  label: string; placeholder: string; value: string; onSave: (value: string) => Promise<void>;
+  label: string;
+  placeholder: string;
+  value: string;
+  onSave: (value: string) => Promise<void>;
 }) {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
+
   return (
     <label className="day-field">
       <span>{label}</span>
-      <textarea value={draft} placeholder={placeholder} onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => { if (draft !== value) void onSave(draft); }} rows={label === "What's happening" ? 3 : 2} />
+      <textarea
+        value={draft}
+        placeholder={placeholder}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => { if (draft !== value) void onSave(draft); }}
+        rows={label === "What's happening" ? 3 : 2}
+      />
     </label>
   );
 }
 
-function ContentCard({ item, onOpen }: { item: FlowItem; onOpen: (item: FlowItem) => void }) {
+function ContentCard({ item, onOpen }: {
+  item: FlowItem;
+  onOpen: (item: FlowItem) => void;
+}) {
   const m = getMeta(item);
+
   return (
-    <button className={`content-card ${channelClass(m.channel)}`} draggable
-      onDragStart={(e) => { e.dataTransfer.setData("text/flow-item", item.id); e.dataTransfer.effectAllowed = "move"; }}
-      onClick={() => onOpen(item)}>
+    <button
+      className={`content-card ${channelClass(m.channel)}`}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData("text/flow-item", item.id);
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      onClick={() => onOpen(item)}
+    >
       <strong>{item.title}</strong>
       {m.channel && <span className={`channel-pill ${channelClass(m.channel)}`}>{m.channel}</span>}
       {m.plan && <p>{m.plan}</p>}
@@ -348,11 +488,89 @@ function ContentCard({ item, onOpen }: { item: FlowItem; onOpen: (item: FlowItem
   );
 }
 
+function IdeaCard({ item, onOpen }: {
+  item: FlowItem;
+  onOpen: (item: FlowItem) => void;
+}) {
+  const m = getMeta(item);
+
+  return (
+    <button className={`idea-card ${channelClass(m.channel)}`} onClick={() => onOpen(item)}>
+      <div className="idea-card-top">
+        <strong>{item.title}</strong>
+        {m.channel && <span className={`channel-pill ${channelClass(m.channel)}`}>{m.channel}</span>}
+      </div>
+
+      {m.why_like && <p>{m.why_like}</p>}
+
+      <div className="idea-card-footer">
+        <span>{m.source_url ? "Has reference ↗" : "No reference"}</span>
+        <span>Open →</span>
+      </div>
+    </button>
+  );
+}
+
+function IdeasPage({ items, onOpen, onAdd }: {
+  items: FlowItem[];
+  onOpen: (item: FlowItem) => void;
+  onAdd: () => void;
+}) {
+  return (
+    <div className="ideas-page">
+      <div className="ideas-intro">
+        <div>
+          <div className="eyebrow">INSPIRATION LIBRARY</div>
+          <h2>Save what catches your attention.</h2>
+          <p>Hooks, formats, references and half-formed thoughts. Capture now. Decide what to make later.</p>
+        </div>
+        <button className="primary-button" onClick={onAdd}>+ Capture idea</button>
+      </div>
+
+      {items.length === 0 ? (
+        <div className="empty-state">No ideas yet. Save the next post, hook or format that makes you stop scrolling.</div>
+      ) : (
+        <div className="ideas-grid">
+          {items.map((item) => <IdeaCard key={item.id} item={item} onOpen={onOpen} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InboxPage({ items, onOpen, onAdd }: {
+  items: FlowItem[];
+  onOpen: (item: FlowItem) => void;
+  onAdd: () => void;
+}) {
+  return (
+    <div className="inbox-page">
+      <div className="inbox-header">
+        <div>
+          <div className="eyebrow">UNSCHEDULED CONTENT</div>
+          <h2>Ready to plan.</h2>
+          <p>Content you intend to make, but haven’t given a day yet.</p>
+        </div>
+        <button className="primary-button" onClick={onAdd}>+ Add block</button>
+      </div>
+
+      <div className="inbox-grid">
+        {items.length === 0
+          ? <div className="empty-state">Nothing waiting. Turn an idea into content or add a block directly.</div>
+          : items.map((item) => <ContentCard key={item.id} item={item} onOpen={onOpen} />)}
+      </div>
+    </div>
+  );
+}
+
 function NewBlockModal({ day, onClose, onSave }: {
-  day: string | null; onClose: () => void; onSave: (day: string | null, draft: DraftBlock) => Promise<void>;
+  day: string | null;
+  onClose: () => void;
+  onSave: (day: string | null, draft: DraftBlock) => Promise<void>;
 }) {
   const [draft, setDraft] = useState<DraftBlock>({ title: "", channel: "Instagram", plan: "" });
   const [saving, setSaving] = useState(false);
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!draft.title.trim()) return;
@@ -360,23 +578,94 @@ function NewBlockModal({ day, onClose, onSave }: {
     await onSave(day, draft);
     setSaving(false);
   }
+
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
       <form className="modal" onSubmit={submit} onMouseDown={(e) => e.stopPropagation()}>
-        <div className="modal-heading"><div><div className="eyebrow">{day ?? "INBOX"}</div><h2>New content block</h2></div><button type="button" className="icon-button" onClick={onClose}>×</button></div>
+        <div className="modal-heading">
+          <div>
+            <div className="eyebrow">{day ?? "INBOX"}</div>
+            <h2>New content block</h2>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose}>×</button>
+        </div>
+
         <label><span>Title</span><input autoFocus value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Red Bull Half Court" /></label>
-        <label><span>Channel</span><select value={draft.channel} onChange={(e) => setDraft({ ...draft, channel: e.target.value })}>
-          <option>Instagram</option><option>LinkedIn</option><option>YouTube</option><option>TikTok</option><option>Substack</option><option>Stories</option><option>Multi-channel</option>
-        </select></label>
+
+        <label>
+          <span>Channel</span>
+          <select value={draft.channel} onChange={(e) => setDraft({ ...draft, channel: e.target.value })}>
+            <option>Instagram</option><option>LinkedIn</option><option>YouTube</option><option>TikTok</option><option>Substack</option><option>Stories</option><option>Multi-channel</option>
+          </select>
+        </label>
+
         <label><span>Plan</span><textarea rows={4} value={draft.plan} onChange={(e) => setDraft({ ...draft, plan: e.target.value })} placeholder="Event recap reel: arrival → energy → game → closing thought." /></label>
-        <div className="modal-actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary-button" disabled={saving || !draft.title.trim()}>{saving ? "Adding…" : "Add block"}</button></div>
+
+        <div className="modal-actions">
+          <button type="button" onClick={onClose}>Cancel</button>
+          <button className="primary-button" disabled={saving || !draft.title.trim()}>{saving ? "Adding…" : "Add block"}</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function NewIdeaModal({ onClose, onSave }: {
+  onClose: () => void;
+  onSave: (draft: DraftIdea) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState<DraftIdea>({
+    title: "",
+    channel: "Instagram",
+    source_url: "",
+    why_like: "",
+  });
+  const [saving, setSaving] = useState(false);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!draft.title.trim()) return;
+    setSaving(true);
+    await onSave(draft);
+    setSaving(false);
+  }
+
+  return (
+    <div className="modal-backdrop" onMouseDown={onClose}>
+      <form className="modal" onSubmit={submit} onMouseDown={(e) => e.stopPropagation()}>
+        <div className="modal-heading">
+          <div>
+            <div className="eyebrow">IDEAS</div>
+            <h2>Capture inspiration</h2>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose}>×</button>
+        </div>
+
+        <label><span>Title</span><input autoFocus value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Simple running carousel format" /></label>
+
+        <label>
+          <span>Channel</span>
+          <select value={draft.channel} onChange={(e) => setDraft({ ...draft, channel: e.target.value })}>
+            <option>Instagram</option><option>LinkedIn</option><option>YouTube</option><option>TikTok</option><option>Substack</option><option>Stories</option><option>Multi-channel</option>
+          </select>
+        </label>
+
+        <label><span>Source / link</span><input value={draft.source_url} onChange={(e) => setDraft({ ...draft, source_url: e.target.value })} placeholder="https://…" /></label>
+
+        <label><span>Why I like it</span><textarea rows={5} value={draft.why_like} onChange={(e) => setDraft({ ...draft, why_like: e.target.value })} placeholder="Strong first slide. Very little copy. Feels human, not over-designed…" /></label>
+
+        <div className="modal-actions">
+          <button type="button" onClick={onClose}>Cancel</button>
+          <button className="primary-button" disabled={saving || !draft.title.trim()}>{saving ? "Saving…" : "Save idea"}</button>
+        </div>
       </form>
     </div>
   );
 }
 
 function DetailDrawer({ item, onClose, onSave, onArchive }: {
-  item: FlowItem; onClose: () => void;
+  item: FlowItem;
+  onClose: () => void;
   onSave: (item: FlowItem, title: string, channel: string, plan: string, copy: string) => Promise<void>;
   onArchive: (item: FlowItem) => Promise<void>;
 }) {
@@ -390,18 +679,89 @@ function DetailDrawer({ item, onClose, onSave, onArchive }: {
   return (
     <div className="drawer-backdrop" onMouseDown={onClose}>
       <aside className="drawer" onMouseDown={(e) => e.stopPropagation()}>
-        <div className="drawer-header"><div><div className="eyebrow">{item.day ?? "INBOX"} · {channel || "No channel"}</div><h2>Content detail</h2></div><button className="icon-button" onClick={onClose}>×</button></div>
+        <div className="drawer-header">
+          <div>
+            <div className="eyebrow">{item.day ?? "INBOX"} · {channel || "No channel"}</div>
+            <h2>Content detail</h2>
+          </div>
+          <button className="icon-button" onClick={onClose}>×</button>
+        </div>
+
         <label><span>Title</span><input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
-        <label><span>Channel</span><select value={channel} onChange={(e) => setChannel(e.target.value)}>
-          <option>Instagram</option><option>LinkedIn</option><option>YouTube</option><option>TikTok</option><option>Substack</option><option>Stories</option><option>Multi-channel</option>
-        </select></label>
+
+        <label>
+          <span>Channel</span>
+          <select value={channel} onChange={(e) => setChannel(e.target.value)}>
+            <option>Instagram</option><option>LinkedIn</option><option>YouTube</option><option>TikTok</option><option>Substack</option><option>Stories</option><option>Multi-channel</option>
+          </select>
+        </label>
+
         <label><span>Plan</span><textarea rows={5} value={plan} onChange={(e) => setPlan(e.target.value)} /></label>
         <label className="copy-field"><span>Script / post copy</span><textarea rows={16} value={copy} onChange={(e) => setCopy(e.target.value)} placeholder="Write the reel script, caption, post copy or shot-by-shot notes here…" /></label>
+
         <div className="drawer-actions">
           <button className="danger-button" onClick={() => void onArchive(item)}>Archive</button>
           <button className="primary-button" disabled={saving || !title.trim()} onClick={async () => {
-            setSaving(true); await onSave(item, title.trim(), channel, plan, copy); setSaving(false);
+            setSaving(true);
+            await onSave(item, title.trim(), channel, plan, copy);
+            setSaving(false);
           }}>{saving ? "Saving…" : "Save changes"}</button>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function IdeaDrawer({ item, onClose, onSave, onArchive, onTurnIntoContent }: {
+  item: FlowItem;
+  onClose: () => void;
+  onSave: (item: FlowItem, title: string, channel: string, source_url: string, why_like: string) => Promise<void>;
+  onArchive: (item: FlowItem) => Promise<void>;
+  onTurnIntoContent: (item: FlowItem) => Promise<void>;
+}) {
+  const m = getMeta(item);
+  const [title, setTitle] = useState(item.title);
+  const [channel, setChannel] = useState(m.channel ?? "");
+  const [sourceUrl, setSourceUrl] = useState(m.source_url ?? "");
+  const [whyLike, setWhyLike] = useState(m.why_like ?? "");
+  const [saving, setSaving] = useState(false);
+
+  return (
+    <div className="drawer-backdrop" onMouseDown={onClose}>
+      <aside className="drawer" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="drawer-header">
+          <div>
+            <div className="eyebrow">IDEA · {channel || "No channel"}</div>
+            <h2>Inspiration</h2>
+          </div>
+          <button className="icon-button" onClick={onClose}>×</button>
+        </div>
+
+        <label><span>Title</span><input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
+
+        <label>
+          <span>Channel</span>
+          <select value={channel} onChange={(e) => setChannel(e.target.value)}>
+            <option>Instagram</option><option>LinkedIn</option><option>YouTube</option><option>TikTok</option><option>Substack</option><option>Stories</option><option>Multi-channel</option>
+          </select>
+        </label>
+
+        <label><span>Source / link</span><input value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} /></label>
+        {sourceUrl && <a className="source-link" href={sourceUrl} target="_blank" rel="noreferrer">Open reference ↗</a>}
+
+        <label><span>Why I like it</span><textarea rows={10} value={whyLike} onChange={(e) => setWhyLike(e.target.value)} /></label>
+
+        <div className="idea-actions">
+          <button className="secondary-button" onClick={() => void onTurnIntoContent(item)}>Turn into content →</button>
+        </div>
+
+        <div className="drawer-actions">
+          <button className="danger-button" onClick={() => void onArchive(item)}>Archive</button>
+          <button className="primary-button" disabled={saving || !title.trim()} onClick={async () => {
+            setSaving(true);
+            await onSave(item, title.trim(), channel, sourceUrl, whyLike);
+            setSaving(false);
+          }}>{saving ? "Saving…" : "Save idea"}</button>
         </div>
       </aside>
     </div>
@@ -413,21 +773,28 @@ function AuthScreen() {
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+
   async function login(e: FormEvent) {
-    e.preventDefault(); setBusy(true); setMessage("");
+    e.preventDefault();
+    setBusy(true);
+    setMessage("");
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) setMessage(error.message);
     setBusy(false);
   }
+
   return (
-    <div className="auth-screen"><form className="auth-card" onSubmit={login}>
-      <div className="brand-mark large">H</div>
-      <div className="eyebrow">HYPRFY LIFEOS · v{APP_VERSION}</div>
-      <h1>Flowboard</h1><p>Plan the day. Create the story.</p>
-      <label><span>Email</span><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
-      <label><span>Password</span><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required /></label>
-      {message && <div className="auth-message">{message}</div>}
-      <button className="primary-button wide" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
-    </form></div>
+    <div className="auth-screen">
+      <form className="auth-card" onSubmit={login}>
+        <div className="brand-mark large">H</div>
+        <div className="eyebrow">HYPRFY LIFEOS · v{APP_VERSION}</div>
+        <h1>Flowboard</h1>
+        <p>Plan the day. Create the story.</p>
+        <label><span>Email</span><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
+        <label><span>Password</span><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required /></label>
+        {message && <div className="auth-message">{message}</div>}
+        <button className="primary-button wide" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
+      </form>
+    </div>
   );
 }
