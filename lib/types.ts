@@ -15,6 +15,22 @@ export interface FlowDay {
   updated_at: string;
 }
 
+export interface FlowProject {
+  id: string;
+  user_id: string;
+  name: string;
+  description: string | null;
+  goal: string | null;
+  target_date: string | null;
+  notes: string | null;
+  icon: string | null;
+  color: string | null;
+  archived: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface FlowItem {
   id: string;
   user_id: string;

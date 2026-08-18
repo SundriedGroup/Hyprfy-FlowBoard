@@ -1,15 +1,29 @@
-# Hyprfy Flowboard v0.10.0
+# Hyprfy Flowboard v0.11.0
 
-Visible verification: `BUILD v0.10.0`.
+Visible verification: `BUILD v0.11.0`.
 
-## 0.10.0
-- Reference links are now directly clickable from the Ideas grid.
-- Idea drawer has an obvious `Open original reference ↗` button.
-- Instagram links get a branded fallback preview when Instagram blocks metadata.
-- Manual cover image URL supported.
-- Optional cover upload supported via Supabase Storage bucket `flowboard-idea-covers`.
-- Uploaded/manual cover takes priority over scraped preview image.
+## New: Calendar
+- Month view of day context and scheduled content.
+- Channel colours carry through.
+- Project colour dot on calendar content.
+- Click a date to jump directly into that day in Flowboard.
+- Click a content item to open its script/copy drawer.
 
-## Storage setup
-Run `supabase/idea-covers-storage.sql` once if you want file uploads.
-If you do not run it, the app still works and you can paste a cover image URL.
+## New: Projects
+Projects answer: **What am I building over time?**
+- Name
+- Goal / outcome
+- Target date
+- Colour
+- Notes
+- Linked scheduled content
+- Linked unscheduled content
+- Linked ideas
+- Timeline view inside project
+- Project assignment available when creating/editing content and ideas
+
+## Supabase
+Run `supabase/projects-v0.11.sql` once.
+This adds `goal`, `target_date`, and `notes` to the existing `flow_projects` table.
+
+For idea cover uploads, also run `supabase/idea-covers-storage.sql` if you have not already.

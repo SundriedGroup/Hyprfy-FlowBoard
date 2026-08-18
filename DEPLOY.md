@@ -1,13 +1,14 @@
-# Deploy v0.10.0
+# Deploy v0.11.0
 
-The app header must show:
+1. Run Supabase migration:
+   `supabase/projects-v0.11.sql`
 
-BUILD v0.10.0
+2. If idea cover uploads are not working yet, also run:
+   `supabase/idea-covers-storage.sql`
 
-No flow_items schema migration is required.
+3. Upload/replace the application files.
 
-For optional image uploads, create the public Supabase Storage bucket and policies using:
+4. Confirm the app header says:
+   `BUILD v0.11.0`
 
-supabase/idea-covers-storage.sql
-
-Without the bucket, clickable references and cover image URLs still work.
+No old `src/` folder or stale `package-lock.json` should be restored.
