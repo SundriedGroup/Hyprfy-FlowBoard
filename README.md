@@ -1,4 +1,4 @@
-# Hyprfy Flowboard v0.2
+# Hyprfy Flowboard v0.9.3
 
 A date-first planning surface for **Hyprfy LifeOS**.
 
@@ -137,3 +137,8 @@ The main Flowboard exposes the five content-creation sections. Inbox defaults ne
 - Team collaboration
 
 Those should come after the date-first interaction is proven.
+
+
+## Clean build note
+
+Version 0.9.3 is packaged as a single root Next.js app to avoid the duplicate `app/` + `src/app/` deployment conflict.
