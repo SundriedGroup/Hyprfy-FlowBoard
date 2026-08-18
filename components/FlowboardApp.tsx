@@ -6,10 +6,16 @@ import { addDays, format, startOfDay } from "date-fns";
 import { supabase } from "@/lib/supabase";
 import type { ContentMeta, FlowDay, FlowItem } from "@/lib/types";
 
-const APP_VERSION = "0.9.8";
+const APP_VERSION = "0.9.9";
 
 type DraftBlock = { title: string; channel: string; plan: string };
 type DraftIdea = { title: string; channel: string; source_url: string; why_like: string };
+type LinkPreview = {
+  title?: string;
+  description?: string;
+  image?: string;
+  domain?: string;
+};
 type View = "flowboard" | "inbox" | "ideas";
 
 function getMeta(item: FlowItem): ContentMeta {
@@ -26,6 +32,17 @@ function channelClass(channel?: string) {
   if (value === "stories") return "channel-stories";
   if (value === "multi-channel") return "channel-multi";
   return "channel-default";
+}
+
+async function fetchPreview(url: string): Promise<LinkPreview | null> {
+  if (!url.trim()) return null;
+  try {
+    const response = await fetch(`/api/link-preview?url=${encodeURIComponent(url.trim())}`);
+    if (!response.ok) return null;
+    return await response.json() as LinkPreview;
+  } catch {
+    return null;
+  }
 }
 
 export function FlowboardApp() {
@@ -149,6 +166,7 @@ export function FlowboardApp() {
 
     const ideaItems = items.filter((item) => item.day === null && item.item_type === "idea");
     const nextSort = ideaItems.reduce((max, item) => Math.max(max, Number(item.sort_order || 0)), 0) + 100;
+    const preview = draft.source_url.trim() ? await fetchPreview(draft.source_url) : null;
 
     const { data, error: e } = await supabase.from("flow_items").insert({
       user_id: session.user.id,
@@ -161,6 +179,10 @@ export function FlowboardApp() {
         channel: draft.channel.trim(),
         source_url: draft.source_url.trim(),
         why_like: draft.why_like.trim(),
+        preview_title: preview?.title ?? "",
+        preview_description: preview?.description ?? "",
+        preview_image: preview?.image ?? "",
+        preview_domain: preview?.domain ?? "",
       },
     }).select("*").single();
 
@@ -206,9 +228,22 @@ export function FlowboardApp() {
   }
 
   async function saveIdeaDetail(item: FlowItem, title: string, channel: string, source_url: string, why_like: string) {
+    const currentMeta = getMeta(item);
+    const sourceChanged = (currentMeta.source_url ?? "") !== source_url.trim();
+    const preview = sourceChanged && source_url.trim() ? await fetchPreview(source_url) : null;
+
     await updateItem(item, {
       title,
-      metadata: { ...(item.metadata ?? {}), channel, source_url, why_like },
+      metadata: {
+        ...(item.metadata ?? {}),
+        channel,
+        source_url: source_url.trim(),
+        why_like,
+        preview_title: sourceChanged ? (preview?.title ?? "") : (currentMeta.preview_title ?? ""),
+        preview_description: sourceChanged ? (preview?.description ?? "") : (currentMeta.preview_description ?? ""),
+        preview_image: sourceChanged ? (preview?.image ?? "") : (currentMeta.preview_image ?? ""),
+        preview_domain: sourceChanged ? (preview?.domain ?? "") : (currentMeta.preview_domain ?? ""),
+      },
     });
   }
 
@@ -493,19 +528,36 @@ function IdeaCard({ item, onOpen }: {
   onOpen: (item: FlowItem) => void;
 }) {
   const m = getMeta(item);
+  const hasPreview = Boolean(m.preview_image || m.preview_title || m.preview_description);
 
   return (
     <button className={`idea-card ${channelClass(m.channel)}`} onClick={() => onOpen(item)}>
-      <div className="idea-card-top">
-        <strong>{item.title}</strong>
-        {m.channel && <span className={`channel-pill ${channelClass(m.channel)}`}>{m.channel}</span>}
-      </div>
+      {m.preview_image && (
+        <div className="preview-image-wrap">
+          <img src={m.preview_image} alt="" className="preview-image" />
+        </div>
+      )}
 
-      {m.why_like && <p>{m.why_like}</p>}
+      <div className="idea-card-body">
+        <div className="idea-card-top">
+          <strong>{item.title}</strong>
+          {m.channel && <span className={`channel-pill ${channelClass(m.channel)}`}>{m.channel}</span>}
+        </div>
 
-      <div className="idea-card-footer">
-        <span>{m.source_url ? "Has reference ↗" : "No reference"}</span>
-        <span>Open →</span>
+        {hasPreview && (
+          <div className="link-preview">
+            {m.preview_domain && <span className="preview-domain">{m.preview_domain}</span>}
+            {m.preview_title && <div className="preview-title">{m.preview_title}</div>}
+            {m.preview_description && <p className="preview-description">{m.preview_description}</p>}
+          </div>
+        )}
+
+        {m.why_like && <p className="why-like">{m.why_like}</p>}
+
+        <div className="idea-card-footer">
+          <span>{m.source_url ? "Reference saved ↗" : "No reference"}</span>
+          <span>Open →</span>
+        </div>
       </div>
     </button>
   );
@@ -748,6 +800,17 @@ function IdeaDrawer({ item, onClose, onSave, onArchive, onTurnIntoContent }: {
 
         <label><span>Source / link</span><input value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} /></label>
         {sourceUrl && <a className="source-link" href={sourceUrl} target="_blank" rel="noreferrer">Open reference ↗</a>}
+
+        {(m.preview_image || m.preview_title || m.preview_description) && (
+          <div className="drawer-preview">
+            {m.preview_image && <img src={m.preview_image} alt="" />}
+            <div>
+              {m.preview_domain && <span className="preview-domain">{m.preview_domain}</span>}
+              {m.preview_title && <strong>{m.preview_title}</strong>}
+              {m.preview_description && <p>{m.preview_description}</p>}
+            </div>
+          </div>
+        )}
 
         <label><span>Why I like it</span><textarea rows={10} value={whyLike} onChange={(e) => setWhyLike(e.target.value)} /></label>
 

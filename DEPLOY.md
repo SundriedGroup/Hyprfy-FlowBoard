@@ -1,10 +1,11 @@
-# Deploy v0.9.8
+# Deploy v0.9.9
 
-The page must show:
+The app header must show:
 
-BUILD v0.9.8
+BUILD v0.9.9
 
-If not, Vercel is serving an older build.
+This version adds:
+- app/api/link-preview/route.ts
+- rich preview metadata in Ideas
 
-No Supabase migration is required.
-Do not restore an old `src/` folder or stale `package-lock.json`.
+No database migration required.

@@ -45,3 +45,17 @@ nav{display:grid;gap:5px}.nav-item{border:0;background:transparent;padding:8px 9
 .source-link:hover{text-decoration:underline}
 .idea-actions{margin-top:18px;padding:14px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
 .secondary-button{border:1px solid #bdbdb6;background:#f7f7f4;border-radius:9px;padding:9px 12px;font-weight:700}
+
+.preview-image-wrap{margin:-13px -13px 11px;height:145px;overflow:hidden;border-radius:9px 9px 0 0;background:#eee}
+.preview-image{width:100%;height:100%;object-fit:cover;display:block}
+.idea-card-body{display:flex;flex-direction:column;flex:1}
+.link-preview{margin-top:10px}
+.preview-domain{display:block;font-size:8px;text-transform:uppercase;letter-spacing:.1em;color:#8c8c85;margin-bottom:4px}
+.preview-title{font-size:11px;font-weight:750;line-height:1.35}
+.preview-description{font-size:10px!important;color:#73736c!important;line-height:1.4!important;margin:5px 0 0!important;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.why-like{margin-top:10px!important;padding-top:9px;border-top:1px solid color-mix(in srgb,var(--channel) 12%,var(--line))}
+.drawer-preview{margin-top:14px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fafaf8}
+.drawer-preview img{width:100%;max-height:240px;object-fit:cover;display:block}
+.drawer-preview>div{padding:12px}
+.drawer-preview strong{display:block;font-size:13px;margin:3px 0 5px}
+.drawer-preview p{font-size:11px;color:var(--muted);line-height:1.45;margin:0}

@@ -43,4 +43,8 @@ export type ContentMeta = {
   source_url?: string;
   why_like?: string;
   source_idea_id?: string;
+  preview_title?: string;
+  preview_description?: string;
+  preview_image?: string;
+  preview_domain?: string;
 };
