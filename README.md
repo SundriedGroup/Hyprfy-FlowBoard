@@ -1,4 +1,4 @@
-# Hyprfy Flowboard v0.9.3
+# Hyprfy Flowboard v0.9.4
 
 A date-first planning surface for **Hyprfy LifeOS**.
 
@@ -141,4 +141,9 @@ Those should come after the date-first interaction is proven.
 
 ## Clean build note
 
-Version 0.9.3 is packaged as a single root Next.js app to avoid the duplicate `app/` + `src/app/` deployment conflict.
+Version 0.9.4 is packaged as a single root Next.js app to avoid the duplicate `app/` + `src/app/` deployment conflict.
+
+
+## v0.9.4 interaction update
+
+The fixed Ideas / Script / Capture / Edit / Publish sections have been removed. Each day now contains a single Content area with flexible content blocks. A block is created with Title, Channel and Plan. Clicking the block opens a detail drawer containing Title, Channel, Plan and Script / Post Copy. Block detail is persisted in `flow_items.metadata`, so no database migration is required.

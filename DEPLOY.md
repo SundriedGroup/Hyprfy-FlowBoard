@@ -1,4 +1,4 @@
-# Deploy Hyprfy Flowboard 0.9.3
+# Deploy Hyprfy Flowboard 0.9.4
 
 This ZIP is a **full clean application**, not a patch.
 
