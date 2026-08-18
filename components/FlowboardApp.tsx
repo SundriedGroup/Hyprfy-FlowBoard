@@ -6,12 +6,24 @@ import { addDays, format, startOfDay } from "date-fns";
 import { supabase } from "@/lib/supabase";
 import type { ContentMeta, FlowDay, FlowItem } from "@/lib/types";
 
-const APP_VERSION = "0.9.5";
+const APP_VERSION = "0.9.6";
 
 type DraftBlock = { title: string; channel: string; plan: string };
 
 function getMeta(item: FlowItem): ContentMeta {
   return (item.metadata ?? {}) as ContentMeta;
+}
+
+function channelClass(channel?: string) {
+  const value = (channel ?? "").toLowerCase();
+  if (value === "instagram") return "channel-instagram";
+  if (value === "linkedin") return "channel-linkedin";
+  if (value === "youtube") return "channel-youtube";
+  if (value === "tiktok") return "channel-tiktok";
+  if (value === "substack") return "channel-substack";
+  if (value === "stories") return "channel-stories";
+  if (value === "multi-channel") return "channel-multi";
+  return "channel-default";
 }
 
 export function FlowboardApp() {
@@ -293,11 +305,11 @@ function DayField({ label, placeholder, value, onSave }: {
 function ContentCard({ item, onOpen }: { item: FlowItem; onOpen: (item: FlowItem) => void }) {
   const m = getMeta(item);
   return (
-    <button className="content-card" draggable
+    <button className={`content-card ${channelClass(m.channel)}`} draggable
       onDragStart={(e) => { e.dataTransfer.setData("text/flow-item", item.id); e.dataTransfer.effectAllowed = "move"; }}
       onClick={() => onOpen(item)}>
       <strong>{item.title}</strong>
-      {m.channel && <span className="channel-pill">{m.channel}</span>}
+      {m.channel && <span className={`channel-pill ${channelClass(m.channel)}`}>{m.channel}</span>}
       {m.plan && <p>{m.plan}</p>}
       <span className="open-hint">{m.copy ? "Open copy →" : "Add script / copy →"}</span>
     </button>
