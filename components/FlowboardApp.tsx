@@ -18,7 +18,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import type { ContentMeta, FlowDay, FlowItem, FlowProject } from "@/lib/types";
 
-const APP_VERSION = "0.11.3";
+const APP_VERSION = "0.11.5";
 
 type DraftBlock = { title: string; channel: string; plan: string; project_id: string };
 type DraftIdea = { title: string; channel: string; source_url: string; why_like: string; project_id: string };
@@ -98,6 +98,7 @@ export function FlowboardApp() {
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [view, setView] = useState<View>("flowboard");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [anchorDate, setAnchorDate] = useState(() => startOfDay(new Date()));
   const [calendarMonth, setCalendarMonth] = useState(() => startOfMonth(new Date()));
 
@@ -389,7 +390,10 @@ export function FlowboardApp() {
 
       <main className="main-area">
         <header className="topbar">
-          <div>
+          <button className="mobile-menu-button" onClick={() => setMobileMenuOpen(true)} aria-label="Open menu">
+            <span></span><span></span><span></span>
+          </button>
+          <div className="topbar-title">
             <div className="eyebrow">HYPRFY</div>
             <h1>
               {view === "flowboard" ? "Flowboard" :
@@ -400,9 +404,7 @@ export function FlowboardApp() {
           </div>
 
           <div className="topbar-actions">
-            <span className="build-stamp">BUILD v{APP_VERSION}</span>
-
-            {view === "flowboard" && <>
+{view === "flowboard" && <>
               <button onClick={() => setAnchorDate((d) => addDays(d, -7))}>←</button>
               <button onClick={() => setAnchorDate(startOfDay(new Date()))}>Today</button>
               <button onClick={() => setAnchorDate((d) => addDays(d, 7))}>→</button>
@@ -549,13 +551,46 @@ export function FlowboardApp() {
         />
       )}
 
-      <nav className="mobile-nav" aria-label="Flowboard navigation">
-        <button className={view === "flowboard" ? "active" : ""} onClick={() => setView("flowboard")}><span>Flow</span></button>
-        <button className={view === "calendar" ? "active" : ""} onClick={() => setView("calendar")}><span>Calendar</span></button>
-        <button className={view === "projects" ? "active" : ""} onClick={() => setView("projects")}><span>Projects</span></button>
-        <button className={view === "ideas" ? "active" : ""} onClick={() => setView("ideas")}><span>Ideas</span></button>
-        <button className={view === "inbox" ? "active" : ""} onClick={() => setView("inbox")}><span>Inbox</span></button>
-      </nav>
+      {mobileMenuOpen && (
+        <div className="mobile-menu-backdrop" onClick={() => setMobileMenuOpen(false)}>
+          <aside className="mobile-menu-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="mobile-menu-header">
+              <div>
+                <div className="eyebrow">HYPRFY</div>
+                <strong>Flowboard</strong>
+              </div>
+              <button className="icon-button" onClick={() => setMobileMenuOpen(false)}>×</button>
+            </div>
+
+            <nav className="mobile-menu-nav">
+              {[
+                ["flowboard", "Flowboard"],
+                ["calendar", "Calendar"],
+                ["projects", "Projects"],
+                ["ideas", "Ideas"],
+                ["inbox", "Inbox"],
+              ].map(([key, label]) => (
+                <button
+                  key={key}
+                  className={view === key ? "active" : ""}
+                  onClick={() => {
+                    setView(key as View);
+                    setMobileMenuOpen(false);
+                  }}
+                >
+                  <span>{label}</span>
+                  <span>→</span>
+                </button>
+              ))}
+            </nav>
+
+            <div className="mobile-menu-footer">
+              <span>v{APP_VERSION}</span>
+              <button className="text-button" onClick={() => void supabase.auth.signOut()}>Sign out</button>
+            </div>
+          </aside>
+        </div>
+      )}
     </div>
   );
 }

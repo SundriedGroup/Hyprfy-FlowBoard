@@ -1,3 +1,8 @@
-# Deploy v0.11.3
+# Deploy v0.11.5
 
-Confirm BUILD v0.11.3. On mobile, use the bottom navigation and verify the sidebar is hidden.
+Expected on mobile:
+- no bottom navigation
+- hamburger button in top-left
+- slide-out menu
+- active section highlighted
+- version shown only inside menu footer
