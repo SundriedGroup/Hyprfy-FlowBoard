@@ -3,13 +3,9 @@ import "./styles.css";
 
 export const metadata: Metadata = {
   title: "Hyprfy Flowboard",
-  description: "A date-first planning board for Hyprfy LifeOS",
+  description: "Plan the day. Create the story.",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang="en">
-      <body>{children}</body>
-    </html>
-  );
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  return <html lang="en"><body>{children}</body></html>;
 }

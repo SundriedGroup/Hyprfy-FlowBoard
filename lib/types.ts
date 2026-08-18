@@ -1,13 +1,3 @@
-export type FlowItemType =
-  | "task"
-  | "idea"
-  | "script"
-  | "capture"
-  | "edit"
-  | "publish"
-  | "event"
-  | "note";
-
 export type FlowItemStatus = "open" | "done" | "archived";
 
 export interface FlowDay {
@@ -30,7 +20,7 @@ export interface FlowItem {
   user_id: string;
   day: string | null;
   project_id: string | null;
-  item_type: FlowItemType;
+  item_type: "task" | "idea" | "script" | "capture" | "edit" | "publish" | "event" | "note";
   title: string;
   description: string | null;
   status: FlowItemStatus;
@@ -46,25 +36,8 @@ export interface FlowItem {
   updated_at: string;
 }
 
-export interface FlowProject {
-  id: string;
-  user_id: string;
-  name: string;
-  description: string | null;
-  icon: string | null;
-  color: string | null;
-  archived: boolean;
-  sort_order: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export type DayDraft = Pick<
-  FlowDay,
-  | "theme"
-  | "main_outcome"
-  | "whats_happening"
-  | "story_opportunity"
-  | "notes"
-  | "capacity_minutes"
->;
+export type ContentMeta = {
+  channel?: string;
+  plan?: string;
+  copy?: string;
+};

@@ -2,40 +2,17 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
-import {
-  addDays,
-  format,
-  isSameDay,
-  parseISO,
-  startOfDay,
-} from "date-fns";
+import { addDays, format, startOfDay } from "date-fns";
 import { supabase } from "@/lib/supabase";
-import type {
-  DayDraft,
-  FlowDay,
-  FlowItem,
-  FlowItemType,
-  FlowProject,
-} from "@/lib/types";
+import type { ContentMeta, FlowDay, FlowItem } from "@/lib/types";
 
-const SECTION_TYPES: Array<{ key: FlowItemType; label: string }> = [
-  { key: "idea", label: "Ideas" },
-  { key: "script", label: "Script" },
-  { key: "capture", label: "Capture" },
-  { key: "edit", label: "Edit" },
-  { key: "publish", label: "Publish" },
-];
+const APP_VERSION = "0.9.5";
 
-const EMPTY_DAY: DayDraft = {
-  theme: null,
-  main_outcome: null,
-  whats_happening: null,
-  story_opportunity: null,
-  notes: null,
-  capacity_minutes: null,
-};
+type DraftBlock = { title: string; channel: string; plan: string };
 
-type View = "flowboard" | "inbox";
+function getMeta(item: FlowItem): ContentMeta {
+  return (item.metadata ?? {}) as ContentMeta;
+}
 
 export function FlowboardApp() {
   const [session, setSession] = useState<Session | null>(null);
@@ -43,14 +20,15 @@ export function FlowboardApp() {
   const [anchorDate, setAnchorDate] = useState(() => startOfDay(new Date()));
   const [days, setDays] = useState<FlowDay[]>([]);
   const [items, setItems] = useState<FlowItem[]>([]);
-  const [projects, setProjects] = useState<FlowProject[]>([]);
   const [loading, setLoading] = useState(false);
-  const [view, setView] = useState<View>("flowboard");
   const [error, setError] = useState<string | null>(null);
+  const [newBlockDay, setNewBlockDay] = useState<string | null | undefined>(undefined);
+  const [selectedItem, setSelectedItem] = useState<FlowItem | null>(null);
+  const [inboxOpen, setInboxOpen] = useState(false);
 
   const visibleDates = useMemo(
     () => Array.from({ length: 7 }, (_, index) => addDays(anchorDate, index)),
-    [anchorDate],
+    [anchorDate]
   );
 
   useEffect(() => {
@@ -58,728 +36,354 @@ export function FlowboardApp() {
       setSession(data.session);
       setAuthReady(true);
     });
-
     const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
       setAuthReady(true);
     });
-
     return () => data.subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
-    if (!session) return;
-    void loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (session) void loadData();
   }, [session, anchorDate]);
 
   async function loadData() {
     if (!session) return;
     setLoading(true);
     setError(null);
-
     const from = format(visibleDates[0], "yyyy-MM-dd");
     const to = format(visibleDates[visibleDates.length - 1], "yyyy-MM-dd");
-
-    const [daysResult, itemsResult, inboxResult, projectsResult] = await Promise.all([
-      supabase
-        .from("flow_days")
-        .select("*")
-        .gte("day", from)
-        .lte("day", to)
-        .order("day"),
-      supabase
-        .from("flow_items")
-        .select("*")
-        .gte("day", from)
-        .lte("day", to)
-        .neq("status", "archived")
-        .order("day")
-        .order("sort_order"),
-      supabase
-        .from("flow_items")
-        .select("*")
-        .is("day", null)
-        .neq("status", "archived")
-        .order("sort_order"),
-      supabase
-        .from("flow_projects")
-        .select("*")
-        .eq("archived", false)
-        .order("sort_order"),
+    const [dayResult, scheduledResult, inboxResult] = await Promise.all([
+      supabase.from("flow_days").select("*").gte("day", from).lte("day", to).order("day"),
+      supabase.from("flow_items").select("*").gte("day", from).lte("day", to).neq("status", "archived").order("day").order("sort_order"),
+      supabase.from("flow_items").select("*").is("day", null).neq("status", "archived").order("sort_order"),
     ]);
-
-    const firstError =
-      daysResult.error || itemsResult.error || inboxResult.error || projectsResult.error;
-
-    if (firstError) {
-      setError(firstError.message);
-    } else {
-      setDays((daysResult.data ?? []) as FlowDay[]);
-      setItems([
-        ...((itemsResult.data ?? []) as FlowItem[]),
-        ...((inboxResult.data ?? []) as FlowItem[]),
-      ]);
-      setProjects((projectsResult.data ?? []) as FlowProject[]);
+    const firstError = dayResult.error || scheduledResult.error || inboxResult.error;
+    if (firstError) setError(firstError.message);
+    else {
+      setDays((dayResult.data ?? []) as FlowDay[]);
+      setItems([...(scheduledResult.data ?? []), ...(inboxResult.data ?? [])] as FlowItem[]);
     }
-
     setLoading(false);
   }
 
-  async function saveDay(date: Date, patch: Partial<DayDraft>) {
+  async function saveDay(dayKey: string, field: "whats_happening" | "main_outcome" | "story_opportunity", value: string) {
     if (!session) return;
-    const dayKey = format(date, "yyyy-MM-dd");
-    const existing = days.find((day) => day.day === dayKey);
-
+    const existing = days.find((d) => d.day === dayKey);
     if (existing) {
-      setDays((current) =>
-        current.map((day) => (day.id === existing.id ? { ...day, ...patch } : day)),
-      );
-      const { error: updateError } = await supabase
-        .from("flow_days")
-        .update({ ...patch, updated_at: new Date().toISOString() })
-        .eq("id", existing.id);
-      if (updateError) setError(updateError.message);
-      return;
+      const patch = { [field]: value || null, updated_at: new Date().toISOString() };
+      setDays((current) => current.map((d) => d.id === existing.id ? { ...d, ...patch } : d));
+      const { error: e } = await supabase.from("flow_days").update(patch).eq("id", existing.id);
+      if (e) setError(e.message);
+    } else {
+      const { data, error: e } = await supabase.from("flow_days").insert({
+        user_id: session.user.id, day: dayKey, theme: null, main_outcome: null,
+        whats_happening: null, story_opportunity: null, notes: null,
+        capacity_minutes: null, metadata: {}, [field]: value || null
+      }).select("*").single();
+      if (e) setError(e.message);
+      else if (data) setDays((current) => [...current, data as FlowDay]);
     }
+  }
 
-    const payload = {
-      ...EMPTY_DAY,
-      ...patch,
-      day: dayKey,
+  async function addBlock(day: string | null, draft: DraftBlock) {
+    if (!session || !draft.title.trim()) return;
+    const bucket = items.filter((item) => item.day === day);
+    const nextSort = bucket.reduce((max, item) => Math.max(max, Number(item.sort_order || 0)), 0) + 100;
+    const { data, error: e } = await supabase.from("flow_items").insert({
       user_id: session.user.id,
-    };
-
-    const { data, error: insertError } = await supabase
-      .from("flow_days")
-      .insert(payload)
-      .select("*")
-      .single();
-
-    if (insertError) {
-      setError(insertError.message);
-    } else if (data) {
-      setDays((current) => [...current, data as FlowDay]);
-    }
-  }
-
-  async function addItem(day: string | null, itemType: FlowItemType, title: string) {
-    if (!session || !title.trim()) return;
-    const sameBucket = items.filter(
-      (item) => item.day === day && item.item_type === itemType && item.status !== "archived",
-    );
-    const maxOrder = sameBucket.reduce((max, item) => Math.max(max, Number(item.sort_order)), 0);
-
-    const { data, error: insertError } = await supabase
-      .from("flow_items")
-      .insert({
-        user_id: session.user.id,
-        day,
-        item_type: itemType,
-        title: title.trim(),
-        sort_order: maxOrder + 100,
-      })
-      .select("*")
-      .single();
-
-    if (insertError) setError(insertError.message);
-    else if (data) setItems((current) => [...current, data as FlowItem]);
-  }
-
-  async function moveItem(
-    itemId: string,
-    day: string | null,
-    itemType?: FlowItemType,
-    sortOrder?: number,
-  ) {
-    const item = items.find((candidate) => candidate.id === itemId);
-    if (!item) return;
-
-    const next = {
       day,
-      item_type: itemType ?? item.item_type,
-      sort_order: sortOrder ?? item.sort_order,
-    };
-
-    setItems((current) =>
-      current.map((candidate) => (candidate.id === itemId ? { ...candidate, ...next } : candidate)),
-    );
-
-    const { error: updateError } = await supabase
-      .from("flow_items")
-      .update({ ...next, updated_at: new Date().toISOString() })
-      .eq("id", itemId);
-
-    if (updateError) {
-      setError(updateError.message);
-      void loadData();
+      item_type: "task",
+      title: draft.title.trim(),
+      description: null,
+      sort_order: nextSort,
+      metadata: { channel: draft.channel.trim(), plan: draft.plan.trim(), copy: "" }
+    }).select("*").single();
+    if (e) setError(e.message);
+    else if (data) {
+      const inserted = data as FlowItem;
+      setItems((current) => [...current, inserted]);
+      setNewBlockDay(undefined);
+      setSelectedItem(inserted);
     }
   }
 
-  async function toggleDone(item: FlowItem) {
-    const status = item.status === "done" ? "open" : "done";
-    setItems((current) =>
-      current.map((candidate) => (candidate.id === item.id ? { ...candidate, status } : candidate)),
-    );
-    const { error: updateError } = await supabase
-      .from("flow_items")
-      .update({ status, updated_at: new Date().toISOString() })
-      .eq("id", item.id);
-    if (updateError) setError(updateError.message);
+  async function updateItem(item: FlowItem, patch: Partial<FlowItem>) {
+    const next = { ...patch, updated_at: new Date().toISOString() };
+    setItems((current) => current.map((candidate) => candidate.id === item.id ? { ...candidate, ...next } : candidate));
+    setSelectedItem((current) => current?.id === item.id ? { ...current, ...next } : current);
+    const { error: e } = await supabase.from("flow_items").update(next).eq("id", item.id);
+    if (e) { setError(e.message); void loadData(); }
   }
 
-  async function archiveItem(itemId: string) {
-    setItems((current) => current.filter((item) => item.id !== itemId));
-    const { error: updateError } = await supabase
-      .from("flow_items")
-      .update({ status: "archived", updated_at: new Date().toISOString() })
-      .eq("id", itemId);
-    if (updateError) setError(updateError.message);
+  async function moveItem(itemId: string, day: string | null) {
+    const item = items.find((candidate) => candidate.id === itemId);
+    if (!item || item.day === day) return;
+    const bucket = items.filter((candidate) => candidate.day === day && candidate.id !== itemId);
+    const sort_order = bucket.reduce((max, candidate) => Math.max(max, Number(candidate.sort_order || 0)), 0) + 100;
+    await updateItem(item, { day, sort_order });
   }
 
-  if (!authReady) {
-    return <LoadingScreen />;
+  async function saveDetail(item: FlowItem, title: string, channel: string, plan: string, copy: string) {
+    await updateItem(item, {
+      title,
+      metadata: { ...(item.metadata ?? {}), channel, plan, copy }
+    });
   }
 
-  if (!session) {
-    return <AuthScreen />;
+  async function archiveItem(item: FlowItem) {
+    setItems((current) => current.filter((candidate) => candidate.id !== item.id));
+    setSelectedItem(null);
+    const { error: e } = await supabase.from("flow_items").update({
+      status: "archived", updated_at: new Date().toISOString()
+    }).eq("id", item.id);
+    if (e) setError(e.message);
   }
 
-  const today = startOfDay(new Date());
+  if (!authReady) return <div className="center-screen">Loading Flowboard…</div>;
+  if (!session) return <AuthScreen />;
+
+  const inboxItems = items.filter((item) => item.day === null && item.status !== "archived");
 
   return (
     <div className="app-shell">
-      <Sidebar
-        view={view}
-        onView={setView}
-        inboxCount={items.filter((item) => item.day === null).length}
-        onSignOut={() => void supabase.auth.signOut()}
-      />
+      <aside className="sidebar">
+        <div>
+          <div className="brand-lockup">
+            <div className="brand-mark">H</div>
+            <div><strong>Hyprfy</strong><span>Flowboard</span></div>
+          </div>
+          <nav>
+            <button className={`nav-item ${!inboxOpen ? "active" : ""}`} onClick={() => setInboxOpen(false)}>Flowboard</button>
+            <button className={`nav-item ${inboxOpen ? "active" : ""}`} onClick={() => setInboxOpen(true)}>
+              Inbox <span className="count">{inboxItems.length}</span>
+            </button>
+            <button className="nav-item muted" disabled>Calendar <span>Soon</span></button>
+            <button className="nav-item muted" disabled>Projects <span>Soon</span></button>
+          </nav>
+        </div>
+        <div className="sidebar-footer">
+          <span className="version-badge">v{APP_VERSION}</span>
+          <button className="text-button" onClick={() => void supabase.auth.signOut()}>Sign out</button>
+        </div>
+      </aside>
 
       <main className="main-area">
         <header className="topbar">
           <div>
-            <p className="eyebrow">HYPRFY LIFEOS</p>
-            <h1>{view === "flowboard" ? "Flowboard" : "Inbox"}</h1>
+            <div className="eyebrow">HYPRFY LIFEOS</div>
+            <h1>{inboxOpen ? "Inbox" : "Flowboard"}</h1>
           </div>
-          {view === "flowboard" && (
-            <div className="date-controls">
-              <button className="icon-button" onClick={() => setAnchorDate(addDays(anchorDate, -7))}>
-                ←
-              </button>
-              <button className="control-button" onClick={() => setAnchorDate(today)}>
-                Today
-              </button>
-              <span className="segmented active">7 days</span>
-              <span className="segmented muted">14 days</span>
-              <span className="segmented muted">Month</span>
-              <button className="icon-button" onClick={() => setAnchorDate(addDays(anchorDate, 7))}>
-                →
-              </button>
-            </div>
-          )}
+          <div className="topbar-actions">
+            <span className="build-stamp">BUILD v{APP_VERSION}</span>
+            {!inboxOpen && <>
+              <button onClick={() => setAnchorDate((d) => addDays(d, -7))}>←</button>
+              <button onClick={() => setAnchorDate(startOfDay(new Date()))}>Today</button>
+              <button onClick={() => setAnchorDate((d) => addDays(d, 7))}>→</button>
+            </>}
+          </div>
         </header>
 
-        {error && (
-          <div className="error-banner">
-            <span>{error}</span>
-            <button onClick={() => setError(null)}>Dismiss</button>
-          </div>
-        )}
+        {error && <div className="error-banner">{error}</div>}
 
-        {view === "flowboard" ? (
+        {inboxOpen ? (
+          <div className="inbox-page">
+            <div className="inbox-header">
+              <div><div className="eyebrow">UNSCHEDULED</div><h2>Ideas waiting for a day</h2></div>
+              <button className="primary-button" onClick={() => setNewBlockDay(null)}>+ Add block</button>
+            </div>
+            <div className="inbox-grid">
+              {inboxItems.length === 0
+                ? <div className="empty-state">Nothing waiting. Capture an idea when it arrives.</div>
+                : inboxItems.map((item) => <ContentCard key={item.id} item={item} onOpen={setSelectedItem} />)}
+            </div>
+          </div>
+        ) : (
           <div className="board-wrap">
             <div className="board">
               {visibleDates.map((date) => {
                 const dayKey = format(date, "yyyy-MM-dd");
+                const dayData = days.find((d) => d.day === dayKey);
+                const dayItems = items.filter((item) => item.day === dayKey && item.status !== "archived");
+                const isToday = dayKey === format(new Date(), "yyyy-MM-dd");
                 return (
                   <DayColumn
                     key={dayKey}
+                    dayKey={dayKey}
                     date={date}
-                    day={days.find((candidate) => candidate.day === dayKey)}
-                    items={items.filter((item) => item.day === dayKey)}
-                    projects={projects}
-                    loading={loading}
+                    data={dayData}
+                    items={dayItems}
+                    isToday={isToday}
                     onSaveDay={saveDay}
-                    onAddItem={addItem}
-                    onMoveItem={moveItem}
-                    onToggleDone={toggleDone}
-                    onArchive={archiveItem}
+                    onAdd={() => setNewBlockDay(dayKey)}
+                    onOpen={setSelectedItem}
+                    onDropItem={moveItem}
                   />
                 );
               })}
             </div>
           </div>
-        ) : (
-          <InboxView
-            items={items.filter((item) => item.day === null)}
-            onAddItem={addItem}
-            onMoveItem={moveItem}
-            onToggleDone={toggleDone}
-            onArchive={archiveItem}
-          />
         )}
+
+        {loading && <div className="sync-pill">Syncing…</div>}
       </main>
+
+      {newBlockDay !== undefined && (
+        <NewBlockModal day={newBlockDay} onClose={() => setNewBlockDay(undefined)} onSave={addBlock} />
+      )}
+      {selectedItem && (
+        <DetailDrawer item={selectedItem} onClose={() => setSelectedItem(null)} onSave={saveDetail} onArchive={archiveItem} />
+      )}
     </div>
   );
 }
 
-function Sidebar({
-  view,
-  onView,
-  inboxCount,
-  onSignOut,
-}: {
-  view: View;
-  onView: (view: View) => void;
-  inboxCount: number;
-  onSignOut: () => void;
-}) {
-  return (
-    <aside className="sidebar">
-      <div className="brand-mark">H</div>
-      <nav className="nav-list">
-        <button className={view === "flowboard" ? "nav-item active" : "nav-item"} onClick={() => onView("flowboard")}>
-          <span className="nav-glyph">▦</span> Flowboard
-        </button>
-        <button className="nav-item disabled" disabled>
-          <span className="nav-glyph">□</span> Calendar <small>Soon</small>
-        </button>
-        <button className="nav-item disabled" disabled>
-          <span className="nav-glyph">◇</span> Projects <small>Soon</small>
-        </button>
-        <button className={view === "inbox" ? "nav-item active" : "nav-item"} onClick={() => onView("inbox")}>
-          <span className="nav-glyph">↓</span> Inbox
-          {inboxCount > 0 && <strong className="count-badge">{inboxCount}</strong>}
-        </button>
-      </nav>
-      <div className="sidebar-bottom">
-        <button className="nav-item disabled" disabled>
-          <span className="nav-glyph">⚙</span> Settings
-        </button>
-        <button className="nav-item" onClick={onSignOut}>
-          <span className="nav-glyph">↪</span> Sign out
-        </button>
-      </div>
-    </aside>
-  );
-}
-
-function DayColumn({
-  date,
-  day,
-  items,
-  projects,
-  loading,
-  onSaveDay,
-  onAddItem,
-  onMoveItem,
-  onToggleDone,
-  onArchive,
-}: {
+function DayColumn({ dayKey, date, data, items, isToday, onSaveDay, onAdd, onOpen, onDropItem }: {
+  dayKey: string;
   date: Date;
-  day?: FlowDay;
+  data?: FlowDay;
   items: FlowItem[];
-  projects: FlowProject[];
-  loading: boolean;
-  onSaveDay: (date: Date, patch: Partial<DayDraft>) => Promise<void>;
-  onAddItem: (day: string | null, type: FlowItemType, title: string) => Promise<void>;
-  onMoveItem: (id: string, day: string | null, type?: FlowItemType, sortOrder?: number) => Promise<void>;
-  onToggleDone: (item: FlowItem) => Promise<void>;
-  onArchive: (id: string) => Promise<void>;
+  isToday: boolean;
+  onSaveDay: (dayKey: string, field: "whats_happening" | "main_outcome" | "story_opportunity", value: string) => Promise<void>;
+  onAdd: () => void;
+  onOpen: (item: FlowItem) => void;
+  onDropItem: (itemId: string, day: string | null) => Promise<void>;
 }) {
-  const dayKey = format(date, "yyyy-MM-dd");
-  const isToday = isSameDay(date, new Date());
-
   return (
-    <section className={isToday ? "day-column today" : "day-column"}>
-      <div className="day-heading">
-        <div>
-          <p>{format(date, "EEE").toUpperCase()}</p>
-          <h2>{format(date, "d MMM").toUpperCase()}</h2>
-        </div>
-        {isToday && <span className="today-pill">TODAY</span>}
+    <section
+      className={`day-column ${isToday ? "today-column" : ""}`}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault();
+        const itemId = e.dataTransfer.getData("text/flow-item");
+        if (itemId) void onDropItem(itemId, dayKey);
+      }}
+    >
+      <div className="day-header">
+        <div><div className="day-name">{format(date, "EEE")}</div><div className="day-date">{format(date, "d MMM")}</div></div>
+        {isToday && <span className="today-pill">Today</span>}
       </div>
+      <DayField label="What's happening" placeholder="Meetings, events, training, life…" value={data?.whats_happening ?? ""} onSave={(v) => onSaveDay(dayKey, "whats_happening", v)} />
+      <DayField label="Main focus" placeholder="What matters most today?" value={data?.main_outcome ?? ""} onSave={(v) => onSaveDay(dayKey, "main_outcome", v)} />
+      <DayField label="Story opportunity" placeholder="What could this day become a story about?" value={data?.story_opportunity ?? ""} onSave={(v) => onSaveDay(dayKey, "story_opportunity", v)} />
 
-      <div className="day-context">
-        <ContextField
-          label="What's happening"
-          value={day?.whats_happening ?? ""}
-          placeholder="Meetings, events, runs, family plans…"
-          multiline
-          onCommit={(value) => onSaveDay(date, { whats_happening: value || null })}
-        />
-        <ContextField
-          label="Main focus"
-          value={day?.main_outcome ?? ""}
-          placeholder="What matters most today?"
-          onCommit={(value) => onSaveDay(date, { main_outcome: value || null })}
-        />
-        <ContextField
-          label="Story opportunity"
-          value={day?.story_opportunity ?? ""}
-          placeholder="What could this day become a story about?"
-          multiline
-          onCommit={(value) => onSaveDay(date, { story_opportunity: value || null })}
-        />
+      <div className="content-section">
+        <div className="section-title-row"><span>Content</span><span className="section-count">{items.length}</span></div>
+        <div className="cards">{items.map((item) => <ContentCard key={item.id} item={item} onOpen={onOpen} />)}</div>
+        <button className="add-block" onClick={onAdd}>+ Add block</button>
       </div>
-
-      <div className="sections">
-        {SECTION_TYPES.map((section) => {
-          const sectionItems = items
-            .filter((item) => item.item_type === section.key)
-            .sort((a, b) => Number(a.sort_order) - Number(b.sort_order));
-
-          return (
-            <ItemSection
-              key={section.key}
-              day={dayKey}
-              type={section.key}
-              label={section.label}
-              items={sectionItems}
-              projects={projects}
-              onAddItem={onAddItem}
-              onMoveItem={onMoveItem}
-              onToggleDone={onToggleDone}
-              onArchive={onArchive}
-            />
-          );
-        })}
-      </div>
-
-      {loading && <div className="loading-line" />}
     </section>
   );
 }
 
-function ContextField({
-  label,
-  value,
-  placeholder,
-  multiline,
-  onCommit,
-}: {
-  label: string;
-  value: string;
-  placeholder: string;
-  multiline?: boolean;
-  onCommit: (value: string) => Promise<void>;
+function DayField({ label, placeholder, value, onSave }: {
+  label: string; placeholder: string; value: string; onSave: (value: string) => Promise<void>;
 }) {
   const [draft, setDraft] = useState(value);
-
   useEffect(() => setDraft(value), [value]);
-
-  const commit = () => {
-    if (draft !== value) void onCommit(draft.trim());
-  };
-
   return (
-    <label className="context-field">
+    <label className="day-field">
       <span>{label}</span>
-      {multiline ? (
-        <textarea
-          rows={2}
-          value={draft}
-          placeholder={placeholder}
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={commit}
-        />
-      ) : (
-        <input
-          value={draft}
-          placeholder={placeholder}
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={commit}
-        />
-      )}
+      <textarea value={draft} placeholder={placeholder} onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => { if (draft !== value) void onSave(draft); }} rows={label === "What's happening" ? 3 : 2} />
     </label>
   );
 }
 
-function ItemSection({
-  day,
-  type,
-  label,
-  items,
-  projects,
-  onAddItem,
-  onMoveItem,
-  onToggleDone,
-  onArchive,
-}: {
-  day: string;
-  type: FlowItemType;
-  label: string;
-  items: FlowItem[];
-  projects: FlowProject[];
-  onAddItem: (day: string | null, type: FlowItemType, title: string) => Promise<void>;
-  onMoveItem: (id: string, day: string | null, type?: FlowItemType, sortOrder?: number) => Promise<void>;
-  onToggleDone: (item: FlowItem) => Promise<void>;
-  onArchive: (id: string) => Promise<void>;
-}) {
-  const [adding, setAdding] = useState(false);
-  const [title, setTitle] = useState("");
-  const [isOver, setIsOver] = useState(false);
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!title.trim()) return;
-    await onAddItem(day, type, title);
-    setTitle("");
-    setAdding(false);
-  }
-
-  const lastOrder = items.length ? Number(items[items.length - 1].sort_order) : 0;
-
+function ContentCard({ item, onOpen }: { item: FlowItem; onOpen: (item: FlowItem) => void }) {
+  const m = getMeta(item);
   return (
-    <div
-      className={isOver ? "item-section drag-over" : "item-section"}
-      onDragOver={(event) => {
-        event.preventDefault();
-        setIsOver(true);
-      }}
-      onDragLeave={() => setIsOver(false)}
-      onDrop={(event) => {
-        event.preventDefault();
-        setIsOver(false);
-        const id = event.dataTransfer.getData("text/flow-item");
-        if (id) void onMoveItem(id, day, type, lastOrder + 100);
-      }}
-    >
-      <div className="section-title">
-        <span>{label}</span>
-        <small>{items.length || ""}</small>
-      </div>
-
-      <div className="card-list">
-        {items.map((item, index) => {
-          const nextOrder = Number(item.sort_order) - 1;
-          return (
-            <FlowCard
-              key={item.id}
-              item={item}
-              project={projects.find((project) => project.id === item.project_id)}
-              onMoveBefore={(draggedId) => onMoveItem(draggedId, day, type, nextOrder)}
-              onToggleDone={onToggleDone}
-              onArchive={onArchive}
-              index={index}
-            />
-          );
-        })}
-      </div>
-
-      {adding ? (
-        <form className="quick-add-form" onSubmit={submit}>
-          <input autoFocus value={title} placeholder={`Add ${label.toLowerCase()}…`} onChange={(event) => setTitle(event.target.value)} />
-          <div>
-            <button type="submit">Add</button>
-            <button type="button" className="ghost" onClick={() => { setAdding(false); setTitle(""); }}>
-              Cancel
-            </button>
-          </div>
-        </form>
-      ) : (
-        <button className="add-button" onClick={() => setAdding(true)}>+ Add</button>
-      )}
-    </div>
+    <button className="content-card" draggable
+      onDragStart={(e) => { e.dataTransfer.setData("text/flow-item", item.id); e.dataTransfer.effectAllowed = "move"; }}
+      onClick={() => onOpen(item)}>
+      <strong>{item.title}</strong>
+      {m.channel && <span className="channel-pill">{m.channel}</span>}
+      {m.plan && <p>{m.plan}</p>}
+      <span className="open-hint">{m.copy ? "Open copy →" : "Add script / copy →"}</span>
+    </button>
   );
 }
 
-function FlowCard({
-  item,
-  project,
-  onMoveBefore,
-  onToggleDone,
-  onArchive,
-}: {
-  item: FlowItem;
-  project?: FlowProject;
-  onMoveBefore: (id: string) => Promise<void>;
-  onToggleDone: (item: FlowItem) => Promise<void>;
-  onArchive: (id: string) => Promise<void>;
-  index: number;
+function NewBlockModal({ day, onClose, onSave }: {
+  day: string | null; onClose: () => void; onSave: (day: string | null, draft: DraftBlock) => Promise<void>;
 }) {
-  const [over, setOver] = useState(false);
-
-  return (
-    <article
-      className={`${item.status === "done" ? "flow-card done" : "flow-card"}${over ? " card-over" : ""}`}
-      draggable
-      onDragStart={(event) => {
-        event.dataTransfer.effectAllowed = "move";
-        event.dataTransfer.setData("text/flow-item", item.id);
-      }}
-      onDragOver={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        setOver(true);
-      }}
-      onDragLeave={() => setOver(false)}
-      onDrop={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        setOver(false);
-        const id = event.dataTransfer.getData("text/flow-item");
-        if (id && id !== item.id) void onMoveBefore(id);
-      }}
-    >
-      <button className="check-button" aria-label={item.status === "done" ? "Mark open" : "Mark done"} onClick={() => void onToggleDone(item)}>
-        {item.status === "done" ? "✓" : ""}
-      </button>
-      <div className="card-content">
-        <p>{item.title}</p>
-        <div className="card-meta">
-          {project && <span className="project-tag">{project.name}</span>}
-          {item.start_time && <span>{item.start_time.slice(0, 5)}</span>}
-          {item.duration_minutes && <span>{item.duration_minutes}m</span>}
-        </div>
-      </div>
-      <button className="card-menu" title="Archive" onClick={() => void onArchive(item.id)}>×</button>
-    </article>
-  );
-}
-
-function InboxView({
-  items,
-  onAddItem,
-  onMoveItem,
-  onToggleDone,
-  onArchive,
-}: {
-  items: FlowItem[];
-  onAddItem: (day: string | null, type: FlowItemType, title: string) => Promise<void>;
-  onMoveItem: (id: string, day: string | null, type?: FlowItemType, sortOrder?: number) => Promise<void>;
-  onToggleDone: (item: FlowItem) => Promise<void>;
-  onArchive: (id: string) => Promise<void>;
-}) {
-  const [title, setTitle] = useState("");
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!title.trim()) return;
-    await onAddItem(null, "idea", title);
-    setTitle("");
+  const [draft, setDraft] = useState<DraftBlock>({ title: "", channel: "Instagram", plan: "" });
+  const [saving, setSaving] = useState(false);
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!draft.title.trim()) return;
+    setSaving(true);
+    await onSave(day, draft);
+    setSaving(false);
   }
-
   return (
-    <div className="inbox-page">
-      <div className="inbox-intro">
-        <p className="eyebrow">QUICK CAPTURE</p>
-        <h2>Catch it before you schedule it.</h2>
-        <p>Ideas land here first. Give them a date and a section when they have somewhere to go.</p>
-      </div>
-      <form className="inbox-add" onSubmit={submit}>
-        <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Capture an idea, task or thought…" autoFocus />
-        <button type="submit">Add to inbox</button>
+    <div className="modal-backdrop" onMouseDown={onClose}>
+      <form className="modal" onSubmit={submit} onMouseDown={(e) => e.stopPropagation()}>
+        <div className="modal-heading"><div><div className="eyebrow">{day ?? "INBOX"}</div><h2>New content block</h2></div><button type="button" className="icon-button" onClick={onClose}>×</button></div>
+        <label><span>Title</span><input autoFocus value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Red Bull Half Court" /></label>
+        <label><span>Channel</span><select value={draft.channel} onChange={(e) => setDraft({ ...draft, channel: e.target.value })}>
+          <option>Instagram</option><option>LinkedIn</option><option>YouTube</option><option>TikTok</option><option>Substack</option><option>Stories</option><option>Multi-channel</option>
+        </select></label>
+        <label><span>Plan</span><textarea rows={4} value={draft.plan} onChange={(e) => setDraft({ ...draft, plan: e.target.value })} placeholder="Event recap reel: arrival → energy → game → closing thought." /></label>
+        <div className="modal-actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary-button" disabled={saving || !draft.title.trim()}>{saving ? "Adding…" : "Add block"}</button></div>
       </form>
-      <div className="inbox-list">
-        {items.length === 0 ? (
-          <div className="empty-state">Inbox clear. Nice.</div>
-        ) : (
-          items
-            .sort((a, b) => Number(a.sort_order) - Number(b.sort_order))
-            .map((item) => (
-              <InboxCard
-                key={item.id}
-                item={item}
-                onMoveItem={onMoveItem}
-                onToggleDone={onToggleDone}
-                onArchive={onArchive}
-              />
-            ))
-        )}
-      </div>
-      <p className="inbox-tip">Schedule an item here, then switch back to Flowboard to see it in the chosen day.</p>
     </div>
   );
 }
 
-function InboxCard({
-  item,
-  onMoveItem,
-  onToggleDone,
-  onArchive,
-}: {
-  item: FlowItem;
-  onMoveItem: (id: string, day: string | null, type?: FlowItemType, sortOrder?: number) => Promise<void>;
-  onToggleDone: (item: FlowItem) => Promise<void>;
-  onArchive: (id: string) => Promise<void>;
+function DetailDrawer({ item, onClose, onSave, onArchive }: {
+  item: FlowItem; onClose: () => void;
+  onSave: (item: FlowItem, title: string, channel: string, plan: string, copy: string) => Promise<void>;
+  onArchive: (item: FlowItem) => Promise<void>;
 }) {
-  const [day, setDay] = useState(format(new Date(), "yyyy-MM-dd"));
-  const [type, setType] = useState<FlowItemType>(item.item_type === "task" || item.item_type === "note" ? "idea" : item.item_type);
+  const m = getMeta(item);
+  const [title, setTitle] = useState(item.title);
+  const [channel, setChannel] = useState(m.channel ?? "");
+  const [plan, setPlan] = useState(m.plan ?? "");
+  const [copy, setCopy] = useState(m.copy ?? "");
+  const [saving, setSaving] = useState(false);
 
   return (
-    <article className={item.status === "done" ? "inbox-card done" : "inbox-card"}>
-      <div className="inbox-card-main">
-        <button className="check-button" aria-label={item.status === "done" ? "Mark open" : "Mark done"} onClick={() => void onToggleDone(item)}>
-          {item.status === "done" ? "✓" : ""}
-        </button>
-        <p>{item.title}</p>
-        <button className="card-menu visible" title="Archive" onClick={() => void onArchive(item.id)}>×</button>
-      </div>
-      <div className="schedule-row">
-        <input type="date" value={day} onChange={(event) => setDay(event.target.value)} />
-        <select value={type} onChange={(event) => setType(event.target.value as FlowItemType)}>
-          {SECTION_TYPES.map((section) => <option key={section.key} value={section.key}>{section.label}</option>)}
-        </select>
-        <button onClick={() => void onMoveItem(item.id, day, type, 100)}>Schedule</button>
-      </div>
-    </article>
+    <div className="drawer-backdrop" onMouseDown={onClose}>
+      <aside className="drawer" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="drawer-header"><div><div className="eyebrow">{item.day ?? "INBOX"} · {channel || "No channel"}</div><h2>Content detail</h2></div><button className="icon-button" onClick={onClose}>×</button></div>
+        <label><span>Title</span><input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
+        <label><span>Channel</span><select value={channel} onChange={(e) => setChannel(e.target.value)}>
+          <option>Instagram</option><option>LinkedIn</option><option>YouTube</option><option>TikTok</option><option>Substack</option><option>Stories</option><option>Multi-channel</option>
+        </select></label>
+        <label><span>Plan</span><textarea rows={5} value={plan} onChange={(e) => setPlan(e.target.value)} /></label>
+        <label className="copy-field"><span>Script / post copy</span><textarea rows={16} value={copy} onChange={(e) => setCopy(e.target.value)} placeholder="Write the reel script, caption, post copy or shot-by-shot notes here…" /></label>
+        <div className="drawer-actions">
+          <button className="danger-button" onClick={() => void onArchive(item)}>Archive</button>
+          <button className="primary-button" disabled={saving || !title.trim()} onClick={async () => {
+            setSaving(true); await onSave(item, title.trim(), channel, plan, copy); setSaving(false);
+          }}>{saving ? "Saving…" : "Save changes"}</button>
+        </div>
+      </aside>
+    </div>
   );
 }
 
 function AuthScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-
-  async function signIn(event: FormEvent) {
-    event.preventDefault();
-    setBusy(true);
-    setMessage(null);
+  async function login(e: FormEvent) {
+    e.preventDefault(); setBusy(true); setMessage("");
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setMessage(error ? error.message : null);
+    if (error) setMessage(error.message);
     setBusy(false);
   }
-
-  async function magicLink() {
-    if (!email) {
-      setMessage("Enter your email first.");
-      return;
-    }
-    setBusy(true);
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: window.location.origin },
-    });
-    setMessage(error ? error.message : "Magic link sent. Check your email.");
-    setBusy(false);
-  }
-
   return (
-    <main className="auth-page">
-      <section className="auth-card">
-        <div className="brand-mark large">H</div>
-        <p className="eyebrow">HYPRFY LIFEOS</p>
-        <h1>Flowboard</h1>
-        <p className="auth-copy">Plan around the day — not around a status column.</p>
-        <form onSubmit={signIn}>
-          <label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
-          <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
-          <button className="primary-button" disabled={busy}>{busy ? "Working…" : "Sign in"}</button>
-        </form>
-        <button className="magic-button" onClick={() => void magicLink()} disabled={busy}>Send me a magic link instead</button>
-        {message && <p className="auth-message">{message}</p>}
-      </section>
-    </main>
-  );
-}
-
-function LoadingScreen() {
-  return (
-    <main className="auth-page">
-      <div className="brand-mark large pulse">H</div>
-    </main>
+    <div className="auth-screen"><form className="auth-card" onSubmit={login}>
+      <div className="brand-mark large">H</div>
+      <div className="eyebrow">HYPRFY LIFEOS · v{APP_VERSION}</div>
+      <h1>Flowboard</h1><p>Plan the day. Create the story.</p>
+      <label><span>Email</span><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
+      <label><span>Password</span><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required /></label>
+      {message && <div className="auth-message">{message}</div>}
+      <button className="primary-button wide" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
+    </form></div>
   );
 }
