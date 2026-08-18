@@ -18,7 +18,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import type { ContentMeta, FlowDay, FlowItem, FlowProject } from "@/lib/types";
 
-const APP_VERSION = "0.11.0";
+const APP_VERSION = "0.11.3";
 
 type DraftBlock = { title: string; channel: string; plan: string; project_id: string };
 type DraftIdea = { title: string; channel: string; source_url: string; why_like: string; project_id: string };
@@ -390,7 +390,7 @@ export function FlowboardApp() {
       <main className="main-area">
         <header className="topbar">
           <div>
-            <div className="eyebrow">HYPRFY LIFEOS</div>
+            <div className="eyebrow">HYPRFY</div>
             <h1>
               {view === "flowboard" ? "Flowboard" :
                view === "calendar" ? "Calendar" :
@@ -548,6 +548,14 @@ export function FlowboardApp() {
           onJumpToDate={openCalendarDate}
         />
       )}
+
+      <nav className="mobile-nav" aria-label="Flowboard navigation">
+        <button className={view === "flowboard" ? "active" : ""} onClick={() => setView("flowboard")}><span>Flow</span></button>
+        <button className={view === "calendar" ? "active" : ""} onClick={() => setView("calendar")}><span>Calendar</span></button>
+        <button className={view === "projects" ? "active" : ""} onClick={() => setView("projects")}><span>Projects</span></button>
+        <button className={view === "ideas" ? "active" : ""} onClick={() => setView("ideas")}><span>Ideas</span></button>
+        <button className={view === "inbox" ? "active" : ""} onClick={() => setView("inbox")}><span>Inbox</span></button>
+      </nav>
     </div>
   );
 }
@@ -1103,7 +1111,7 @@ function AuthScreen() {
   }
   return (
     <div className="auth-screen"><form className="auth-card" onSubmit={login}>
-      <div className="brand-mark large">H</div><div className="eyebrow">HYPRFY LIFEOS · v{APP_VERSION}</div>
+      <div className="brand-mark large">H</div><div className="eyebrow">HYPRFY · v{APP_VERSION}</div>
       <h1>Flowboard</h1><p>Plan the day. Create the story.</p>
       <label><span>Email</span><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
       <label><span>Password</span><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required /></label>
