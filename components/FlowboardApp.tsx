@@ -6,7 +6,7 @@ import { addDays, format, startOfDay } from "date-fns";
 import { supabase } from "@/lib/supabase";
 import type { ContentMeta, FlowDay, FlowItem } from "@/lib/types";
 
-const APP_VERSION = "0.9.6";
+const APP_VERSION = "0.9.7";
 
 type DraftBlock = { title: string; channel: string; plan: string };
 
@@ -263,7 +263,7 @@ function DayColumn({ dayKey, date, data, items, isToday, onSaveDay, onAdd, onOpe
 }) {
   return (
     <section
-      className={`day-column ${isToday ? "today-column" : ""}`}
+      className="day-stack"
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
         e.preventDefault();
@@ -271,17 +271,49 @@ function DayColumn({ dayKey, date, data, items, isToday, onSaveDay, onAdd, onOpe
         if (itemId) void onDropItem(itemId, dayKey);
       }}
     >
-      <div className="day-header">
-        <div><div className="day-name">{format(date, "EEE")}</div><div className="day-date">{format(date, "d MMM")}</div></div>
-        {isToday && <span className="today-pill">Today</span>}
-      </div>
-      <DayField label="What's happening" placeholder="Meetings, events, training, life…" value={data?.whats_happening ?? ""} onSave={(v) => onSaveDay(dayKey, "whats_happening", v)} />
-      <DayField label="Main focus" placeholder="What matters most today?" value={data?.main_outcome ?? ""} onSave={(v) => onSaveDay(dayKey, "main_outcome", v)} />
-      <DayField label="Story opportunity" placeholder="What could this day become a story about?" value={data?.story_opportunity ?? ""} onSave={(v) => onSaveDay(dayKey, "story_opportunity", v)} />
+      <div className={`day-context ${isToday ? "today-column" : ""}`}>
+        <div className="day-header">
+          <div>
+            <div className="day-name">{format(date, "EEE")}</div>
+            <div className="day-date">{format(date, "d MMM")}</div>
+          </div>
+          {isToday && <span className="today-pill">Today</span>}
+        </div>
 
-      <div className="content-section">
-        <div className="section-title-row"><span>Content</span><span className="section-count">{items.length}</span></div>
-        <div className="cards">{items.map((item) => <ContentCard key={item.id} item={item} onOpen={onOpen} />)}</div>
+        <div className="context-fields">
+          <DayField
+            label="What's happening"
+            placeholder="Meetings, events, training, life…"
+            value={data?.whats_happening ?? ""}
+            onSave={(v) => onSaveDay(dayKey, "whats_happening", v)}
+          />
+          <DayField
+            label="Main focus"
+            placeholder="What matters most today?"
+            value={data?.main_outcome ?? ""}
+            onSave={(v) => onSaveDay(dayKey, "main_outcome", v)}
+          />
+          <DayField
+            label="Story opportunity"
+            placeholder="What could this day become a story about?"
+            value={data?.story_opportunity ?? ""}
+            onSave={(v) => onSaveDay(dayKey, "story_opportunity", v)}
+          />
+        </div>
+      </div>
+
+      <div className="content-bucket">
+        <div className="section-title-row">
+          <span>Content</span>
+          <span className="section-count">{items.length}</span>
+        </div>
+
+        <div className="cards">
+          {items.map((item) => (
+            <ContentCard key={item.id} item={item} onOpen={onOpen} />
+          ))}
+        </div>
+
         <button className="add-block" onClick={onAdd}>+ Add block</button>
       </div>
     </section>
