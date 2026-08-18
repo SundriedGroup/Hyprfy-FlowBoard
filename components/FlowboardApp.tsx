@@ -6,7 +6,7 @@ import { addDays, format, startOfDay } from "date-fns";
 import { supabase } from "@/lib/supabase";
 import type { ContentMeta, FlowDay, FlowItem } from "@/lib/types";
 
-const APP_VERSION = "0.9.9";
+const APP_VERSION = "0.10.0";
 
 type DraftBlock = { title: string; channel: string; plan: string };
 type DraftIdea = { title: string; channel: string; source_url: string; why_like: string };
@@ -43,6 +43,38 @@ async function fetchPreview(url: string): Promise<LinkPreview | null> {
   } catch {
     return null;
   }
+}
+
+function isInstagramUrl(url?: string) {
+  if (!url) return false;
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+    return host === "instagram.com" || host.endsWith(".instagram.com");
+  } catch {
+    return false;
+  }
+}
+
+function safeHost(url?: string) {
+  if (!url) return "";
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+async function uploadIdeaCover(userId: string, file: File) {
+  const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
+  const path = `${userId}/${crypto.randomUUID()}.${extension}`;
+  const { error } = await supabase.storage
+    .from("flowboard-idea-covers")
+    .upload(path, file, { upsert: false, contentType: file.type || undefined });
+
+  if (error) throw error;
+
+  const { data } = supabase.storage.from("flowboard-idea-covers").getPublicUrl(path);
+  return data.publicUrl;
 }
 
 export function FlowboardApp() {
@@ -183,6 +215,7 @@ export function FlowboardApp() {
         preview_description: preview?.description ?? "",
         preview_image: preview?.image ?? "",
         preview_domain: preview?.domain ?? "",
+        cover_image: "",
       },
     }).select("*").single();
 
@@ -243,6 +276,7 @@ export function FlowboardApp() {
         preview_description: sourceChanged ? (preview?.description ?? "") : (currentMeta.preview_description ?? ""),
         preview_image: sourceChanged ? (preview?.image ?? "") : (currentMeta.preview_image ?? ""),
         preview_domain: sourceChanged ? (preview?.domain ?? "") : (currentMeta.preview_domain ?? ""),
+        cover_image: currentMeta.cover_image ?? "",
       },
     });
   }
@@ -528,38 +562,64 @@ function IdeaCard({ item, onOpen }: {
   onOpen: (item: FlowItem) => void;
 }) {
   const m = getMeta(item);
-  const hasPreview = Boolean(m.preview_image || m.preview_title || m.preview_description);
+  const sourceUrl = m.source_url ?? "";
+  const image = m.cover_image || m.preview_image;
+  const instagram = isInstagramUrl(sourceUrl);
+  const hasPreview = Boolean(image || m.preview_title || m.preview_description);
 
   return (
-    <button className={`idea-card ${channelClass(m.channel)}`} onClick={() => onOpen(item)}>
-      {m.preview_image && (
-        <div className="preview-image-wrap">
-          <img src={m.preview_image} alt="" className="preview-image" />
-        </div>
-      )}
+    <div className={`idea-card ${channelClass(m.channel)}`}>
+      {image ? (
+        <button className="idea-cover-button" onClick={() => onOpen(item)} aria-label={`Open ${item.title}`}>
+          <div className="preview-image-wrap">
+            <img src={image} alt="" className="preview-image" />
+          </div>
+        </button>
+      ) : instagram ? (
+        <button className="instagram-fallback" onClick={() => onOpen(item)} aria-label={`Open ${item.title}`}>
+          <div className="instagram-glyph">◎</div>
+          <span>Instagram reference</span>
+        </button>
+      ) : null}
 
       <div className="idea-card-body">
-        <div className="idea-card-top">
-          <strong>{item.title}</strong>
-          {m.channel && <span className={`channel-pill ${channelClass(m.channel)}`}>{m.channel}</span>}
-        </div>
-
-        {hasPreview && (
-          <div className="link-preview">
-            {m.preview_domain && <span className="preview-domain">{m.preview_domain}</span>}
-            {m.preview_title && <div className="preview-title">{m.preview_title}</div>}
-            {m.preview_description && <p className="preview-description">{m.preview_description}</p>}
+        <button className="idea-main-button" onClick={() => onOpen(item)}>
+          <div className="idea-card-top">
+            <strong>{item.title}</strong>
+            {m.channel && <span className={`channel-pill ${channelClass(m.channel)}`}>{m.channel}</span>}
           </div>
-        )}
 
-        {m.why_like && <p className="why-like">{m.why_like}</p>}
+          {hasPreview && (
+            <div className="link-preview">
+              {(m.preview_domain || safeHost(sourceUrl)) && (
+                <span className="preview-domain">{m.preview_domain || safeHost(sourceUrl)}</span>
+              )}
+              {m.preview_title && <div className="preview-title">{m.preview_title}</div>}
+              {m.preview_description && <p className="preview-description">{m.preview_description}</p>}
+            </div>
+          )}
+
+          {m.why_like && <p className="why-like">{m.why_like}</p>}
+        </button>
 
         <div className="idea-card-footer">
-          <span>{m.source_url ? "Reference saved ↗" : "No reference"}</span>
-          <span>Open →</span>
+          {sourceUrl ? (
+            <a
+              className="reference-link"
+              href={sourceUrl}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Open reference ↗
+            </a>
+          ) : (
+            <span>No reference</span>
+          )}
+          <button className="open-idea-button" onClick={() => onOpen(item)}>Open →</button>
         </div>
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -776,7 +836,46 @@ function IdeaDrawer({ item, onClose, onSave, onArchive, onTurnIntoContent }: {
   const [channel, setChannel] = useState(m.channel ?? "");
   const [sourceUrl, setSourceUrl] = useState(m.source_url ?? "");
   const [whyLike, setWhyLike] = useState(m.why_like ?? "");
+  const [coverImage, setCoverImage] = useState(m.cover_image ?? "");
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const displayImage = coverImage || m.preview_image || "";
+  const instagram = isInstagramUrl(sourceUrl);
+
+  async function saveIdea() {
+    setSaving(true);
+    await onSave(item, title.trim(), channel, sourceUrl, whyLike);
+
+    if (coverImage !== (m.cover_image ?? "")) {
+      const latest = { ...(item.metadata ?? {}), cover_image: coverImage };
+      const { error } = await supabase.from("flow_items").update({
+        metadata: latest,
+        updated_at: new Date().toISOString(),
+      }).eq("id", item.id);
+      if (error) setUploadError(error.message);
+    }
+
+    setSaving(false);
+  }
+
+  async function handleFile(file?: File) {
+    if (!file) return;
+    setUploading(true);
+    setUploadError("");
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData.session?.user.id;
+      if (!userId) throw new Error("Please sign in again.");
+      const url = await uploadIdeaCover(userId, file);
+      setCoverImage(url);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Cover upload failed.";
+      setUploadError(`${message} You can paste a cover image URL instead.`);
+    } finally {
+      setUploading(false);
+    }
+  }
 
   return (
     <div className="drawer-backdrop" onMouseDown={onClose}>
@@ -789,6 +888,20 @@ function IdeaDrawer({ item, onClose, onSave, onArchive, onTurnIntoContent }: {
           <button className="icon-button" onClick={onClose}>×</button>
         </div>
 
+        {displayImage ? (
+          <div className="drawer-preview manual-cover">
+            <img src={displayImage} alt="" />
+          </div>
+        ) : instagram ? (
+          <div className="drawer-instagram-fallback">
+            <div className="instagram-glyph">◎</div>
+            <div>
+              <strong>Instagram reference</strong>
+              <span>Instagram isn’t exposing a thumbnail for this post.</span>
+            </div>
+          </div>
+        ) : null}
+
         <label><span>Title</span><input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
 
         <label>
@@ -799,11 +912,39 @@ function IdeaDrawer({ item, onClose, onSave, onArchive, onTurnIntoContent }: {
         </label>
 
         <label><span>Source / link</span><input value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} /></label>
-        {sourceUrl && <a className="source-link" href={sourceUrl} target="_blank" rel="noreferrer">Open reference ↗</a>}
 
-        {(m.preview_image || m.preview_title || m.preview_description) && (
-          <div className="drawer-preview">
-            {m.preview_image && <img src={m.preview_image} alt="" />}
+        {sourceUrl && (
+          <a className="source-link source-link-button" href={sourceUrl} target="_blank" rel="noreferrer">
+            Open original reference ↗
+          </a>
+        )}
+
+        <div className="cover-tools">
+          <div className="cover-tool-heading">
+            <span>Cover image</span>
+            <small>Useful when Instagram blocks the preview.</small>
+          </div>
+
+          <label className="upload-button">
+            {uploading ? "Uploading…" : "Upload cover"}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              disabled={uploading}
+              onChange={(e) => void handleFile(e.target.files?.[0])}
+            />
+          </label>
+
+          <label>
+            <span>Or paste image URL</span>
+            <input value={coverImage} onChange={(e) => setCoverImage(e.target.value)} placeholder="https://…" />
+          </label>
+
+          {uploadError && <div className="upload-error">{uploadError}</div>}
+        </div>
+
+        {(m.preview_title || m.preview_description) && (
+          <div className="drawer-preview text-preview">
             <div>
               {m.preview_domain && <span className="preview-domain">{m.preview_domain}</span>}
               {m.preview_title && <strong>{m.preview_title}</strong>}
@@ -820,11 +961,9 @@ function IdeaDrawer({ item, onClose, onSave, onArchive, onTurnIntoContent }: {
 
         <div className="drawer-actions">
           <button className="danger-button" onClick={() => void onArchive(item)}>Archive</button>
-          <button className="primary-button" disabled={saving || !title.trim()} onClick={async () => {
-            setSaving(true);
-            await onSave(item, title.trim(), channel, sourceUrl, whyLike);
-            setSaving(false);
-          }}>{saving ? "Saving…" : "Save idea"}</button>
+          <button className="primary-button" disabled={saving || !title.trim()} onClick={() => void saveIdea()}>
+            {saving ? "Saving…" : "Save idea"}
+          </button>
         </div>
       </aside>
     </div>

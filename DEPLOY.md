@@ -1,11 +1,13 @@
-# Deploy v0.9.9
+# Deploy v0.10.0
 
 The app header must show:
 
-BUILD v0.9.9
+BUILD v0.10.0
 
-This version adds:
-- app/api/link-preview/route.ts
-- rich preview metadata in Ideas
+No flow_items schema migration is required.
 
-No database migration required.
+For optional image uploads, create the public Supabase Storage bucket and policies using:
+
+supabase/idea-covers-storage.sql
+
+Without the bucket, clickable references and cover image URLs still work.

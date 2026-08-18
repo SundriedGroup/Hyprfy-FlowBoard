@@ -1,15 +1,15 @@
-# Hyprfy Flowboard v0.9.9
+# Hyprfy Flowboard v0.10.0
 
-Visible verification: `BUILD v0.9.9`.
+Visible verification: `BUILD v0.10.0`.
 
-## 0.9.9 — Rich link previews in Ideas
-When you save a reference URL, Flowboard now attempts to fetch:
-- preview image
-- page/post title
-- description
-- source domain
+## 0.10.0
+- Reference links are now directly clickable from the Ideas grid.
+- Idea drawer has an obvious `Open original reference ↗` button.
+- Instagram links get a branded fallback preview when Instagram blocks metadata.
+- Manual cover image URL supported.
+- Optional cover upload supported via Supabase Storage bucket `flowboard-idea-covers`.
+- Uploaded/manual cover takes priority over scraped preview image.
 
-The preview is shown directly on the Ideas card and inside the Idea drawer.
-
-If a site blocks metadata access, Flowboard gracefully falls back to the domain/reference link.
-No Supabase migration required; preview metadata is stored in `flow_items.metadata`.
+## Storage setup
+Run `supabase/idea-covers-storage.sql` once if you want file uploads.
+If you do not run it, the app still works and you can paste a cover image URL.

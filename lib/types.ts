@@ -47,4 +47,5 @@ export type ContentMeta = {
   preview_description?: string;
   preview_image?: string;
   preview_domain?: string;
+  cover_image?: string;
 };

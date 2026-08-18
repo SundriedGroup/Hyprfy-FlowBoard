@@ -59,3 +59,30 @@ nav{display:grid;gap:5px}.nav-item{border:0;background:transparent;padding:8px 9
 .drawer-preview>div{padding:12px}
 .drawer-preview strong{display:block;font-size:13px;margin:3px 0 5px}
 .drawer-preview p{font-size:11px;color:var(--muted);line-height:1.45;margin:0}
+
+.idea-card{overflow:hidden;padding:0}
+.idea-cover-button,.idea-main-button,.open-idea-button{border:0;background:transparent;color:inherit;font:inherit}
+.idea-cover-button{display:block;width:100%;padding:0}
+.idea-main-button{display:block;width:100%;padding:13px;text-align:left}
+.idea-card-body{display:flex;flex-direction:column;flex:1}
+.idea-card-footer{padding:0 13px 12px}
+.reference-link{color:#565650;text-decoration:none;font-weight:700}
+.reference-link:hover{text-decoration:underline}
+.open-idea-button{padding:0;color:#8a8a83;font-size:9px;cursor:pointer}
+.instagram-fallback{width:100%;height:120px;border:0;background:linear-gradient(135deg,#833ab4,#fd1d1d,#fcb045);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px}
+.instagram-glyph{width:34px;height:34px;border:2px solid currentColor;border-radius:10px;display:grid;place-items:center;font-size:20px;font-weight:900}
+.instagram-fallback span{font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.drawer-instagram-fallback{margin:0 0 16px;border-radius:12px;padding:18px;background:linear-gradient(135deg,#833ab4,#fd1d1d,#fcb045);color:#fff;display:flex;align-items:center;gap:12px}
+.drawer-instagram-fallback strong,.drawer-instagram-fallback span{display:block}
+.drawer-instagram-fallback span{font-size:11px;opacity:.88;margin-top:3px}
+.source-link-button{border:1px solid var(--line);background:#fafaf7;border-radius:9px;padding:9px 11px;text-decoration:none}
+.source-link-button:hover{background:#f3f3ef;text-decoration:none}
+.cover-tools{margin-top:18px;padding:14px;border:1px solid var(--line);border-radius:12px;background:#fafaf7}
+.cover-tool-heading{display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin-bottom:10px}
+.cover-tool-heading>span{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em}
+.cover-tool-heading small{font-size:9px;color:var(--muted)}
+.upload-button{display:inline-flex!important;align-items:center;justify-content:center;border:1px solid #bdbdb6;background:#fff;border-radius:9px;padding:9px 12px;font-size:11px;font-weight:750;cursor:pointer;margin:0 0 10px!important}
+.upload-button input{display:none}
+.upload-error{margin-top:8px;color:#9e342c;font-size:10px;line-height:1.4}
+.manual-cover img{max-height:320px}
+.text-preview{margin-top:14px}
