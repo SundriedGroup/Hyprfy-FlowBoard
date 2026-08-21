@@ -42,6 +42,10 @@ function getMeta(item: FlowItem): ContentMeta {
   return (item.metadata ?? {}) as ContentMeta;
 }
 
+function isVlogItem(item: FlowItem) {
+  return getMeta(item).content_kind === "vlog";
+}
+
 function channelClass(channel?: string) {
   const value = (channel ?? "").toLowerCase();
   if (value === "instagram") return "channel-instagram";
@@ -197,12 +201,13 @@ export function FlowboardApp() {
       user_id: session.user.id,
       day,
       project_id: draft.project_id || null,
-      item_type: kind === "vlog" ? "vlog" : "task",
+      item_type: "task",
       title: draft.title.trim(),
       description: null,
       sort_order: nextSort,
       metadata: {
         channel: draft.channel.trim(),
+        content_kind: kind,
         plan: draft.plan.trim(),
         copy: "",
         source_idea_id: sourceIdeaId,
@@ -623,8 +628,8 @@ function DayColumn({ dayKey, date, data, items, projects, isToday, onSaveDay, on
   onOpen: (item: FlowItem) => void;
   onDropItem: (itemId: string, day: string | null) => Promise<void>;
 }) {
-  const vlogItems = items.filter((item) => item.item_type === "vlog");
-  const contentItems = items.filter((item) => item.item_type !== "vlog");
+  const vlogItems = items.filter(isVlogItem);
+  const contentItems = items.filter((item) => !isVlogItem(item));
   return (
     <section className="day-stack" onDragOver={(e) => e.preventDefault()} onDrop={(e) => {
       e.preventDefault();
@@ -993,7 +998,7 @@ function DetailDrawer({ item, projects, onClose, onSave, onArchive }: {
   onArchive: (item: FlowItem) => Promise<void>;
 }) {
   const m = getMeta(item);
-  const isVlog = item.item_type === "vlog";
+  const isVlog = isVlogItem(item);
   const [title, setTitle] = useState(item.title);
   const [channel, setChannel] = useState(m.channel ?? "");
   const [projectId, setProjectId] = useState(item.project_id ?? "");
