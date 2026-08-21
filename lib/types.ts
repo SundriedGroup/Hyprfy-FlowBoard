@@ -36,7 +36,7 @@ export interface FlowItem {
   user_id: string;
   day: string | null;
   project_id: string | null;
-  item_type: "task" | "idea" | "script" | "capture" | "edit" | "publish" | "event" | "note";
+  item_type: "task" | "idea" | "vlog" | "script" | "capture" | "edit" | "publish" | "event" | "note";
   title: string;
   description: string | null;
   status: FlowItemStatus;

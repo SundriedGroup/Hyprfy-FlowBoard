@@ -18,9 +18,10 @@ import {
 import { supabase } from "@/lib/supabase";
 import type { ContentMeta, FlowDay, FlowItem, FlowProject } from "@/lib/types";
 
-const APP_VERSION = "0.11.5";
+const APP_VERSION = "0.11.6";
 
 type DraftBlock = { title: string; channel: string; plan: string; project_id: string };
+type BlockKind = "content" | "vlog";
 type DraftIdea = { title: string; channel: string; source_url: string; why_like: string; project_id: string };
 type DraftProject = { name: string; goal: string; target_date: string; color: string; notes: string };
 type View = "flowboard" | "ideas" | "inbox" | "calendar" | "projects";
@@ -109,6 +110,7 @@ export function FlowboardApp() {
   const [error, setError] = useState<string | null>(null);
 
   const [newBlockDay, setNewBlockDay] = useState<string | null | undefined>(undefined);
+  const [newBlockKind, setNewBlockKind] = useState<BlockKind>("content");
   const [selectedItem, setSelectedItem] = useState<FlowItem | null>(null);
   const [ideaModalOpen, setIdeaModalOpen] = useState(false);
   const [selectedIdea, setSelectedIdea] = useState<FlowItem | null>(null);
@@ -186,7 +188,7 @@ export function FlowboardApp() {
     }
   }
 
-  async function addBlock(day: string | null, draft: DraftBlock, sourceIdeaId?: string) {
+  async function addBlock(day: string | null, draft: DraftBlock, sourceIdeaId?: string, kind: BlockKind = "content") {
     if (!session || !draft.title.trim()) return;
     const bucket = items.filter((item) => item.day === day && item.item_type !== "idea");
     const nextSort = bucket.reduce((max, item) => Math.max(max, Number(item.sort_order || 0)), 0) + 100;
@@ -195,7 +197,7 @@ export function FlowboardApp() {
       user_id: session.user.id,
       day,
       project_id: draft.project_id || null,
-      item_type: "task",
+      item_type: kind === "vlog" ? "vlog" : "task",
       title: draft.title.trim(),
       description: null,
       sort_order: nextSort,
@@ -212,6 +214,7 @@ export function FlowboardApp() {
       const inserted = data as FlowItem;
       setItems((current) => [...current, inserted]);
       setNewBlockDay(undefined);
+      setNewBlockKind("content");
       setSelectedItem(inserted);
     }
   }
@@ -352,6 +355,11 @@ export function FlowboardApp() {
     setView("flowboard");
   }
 
+  function openNewBlock(day: string | null, kind: BlockKind = "content") {
+    setNewBlockKind(kind);
+    setNewBlockDay(day);
+  }
+
   if (!authReady) return <div className="center-screen">Loading Flowboard…</div>;
   if (!session) return <AuthScreen />;
 
@@ -425,7 +433,7 @@ export function FlowboardApp() {
             )}
 
             {view === "inbox" && (
-              <button className="primary-button" onClick={() => setNewBlockDay(null)}>+ Add block</button>
+              <button className="primary-button" onClick={() => openNewBlock(null)}>+ Add block</button>
             )}
           </div>
         </header>
@@ -450,7 +458,8 @@ export function FlowboardApp() {
                     projects={projects}
                     isToday={isToday}
                     onSaveDay={saveDay}
-                    onAdd={() => setNewBlockDay(dayKey)}
+                    onAddContent={() => openNewBlock(dayKey)}
+                    onAddVlog={() => openNewBlock(dayKey, "vlog")}
                     onOpen={setSelectedItem}
                     onDropItem={moveItem}
                   />
@@ -485,7 +494,7 @@ export function FlowboardApp() {
         )}
 
         {view === "inbox" && (
-          <InboxPage items={inboxItems} projects={projects} onOpen={setSelectedItem} onAdd={() => setNewBlockDay(null)} />
+          <InboxPage items={inboxItems} projects={projects} onOpen={setSelectedItem} onAdd={() => openNewBlock(null)} />
         )}
 
         {loading && <div className="sync-pill">Syncing…</div>}
@@ -494,9 +503,10 @@ export function FlowboardApp() {
       {newBlockDay !== undefined && (
         <NewBlockModal
           day={newBlockDay}
+          kind={newBlockKind}
           projects={projects}
-          onClose={() => setNewBlockDay(undefined)}
-          onSave={(day, draft) => addBlock(day, draft)}
+          onClose={() => { setNewBlockDay(undefined); setNewBlockKind("content"); }}
+          onSave={(day, draft) => addBlock(day, draft, undefined, newBlockKind)}
         />
       )}
 
@@ -600,7 +610,7 @@ function ProjectDot({ project }: { project?: FlowProject }) {
   return <span className="project-dot" style={{ background: project.color || "#111" }} title={project.name} />;
 }
 
-function DayColumn({ dayKey, date, data, items, projects, isToday, onSaveDay, onAdd, onOpen, onDropItem }: {
+function DayColumn({ dayKey, date, data, items, projects, isToday, onSaveDay, onAddContent, onAddVlog, onOpen, onDropItem }: {
   dayKey: string;
   date: Date;
   data?: FlowDay;
@@ -608,10 +618,13 @@ function DayColumn({ dayKey, date, data, items, projects, isToday, onSaveDay, on
   projects: FlowProject[];
   isToday: boolean;
   onSaveDay: (dayKey: string, field: "whats_happening" | "main_outcome" | "story_opportunity", value: string) => Promise<void>;
-  onAdd: () => void;
+  onAddContent: () => void;
+  onAddVlog: () => void;
   onOpen: (item: FlowItem) => void;
   onDropItem: (itemId: string, day: string | null) => Promise<void>;
 }) {
+  const vlogItems = items.filter((item) => item.item_type === "vlog");
+  const contentItems = items.filter((item) => item.item_type !== "vlog");
   return (
     <section className="day-stack" onDragOver={(e) => e.preventDefault()} onDrop={(e) => {
       e.preventDefault();
@@ -630,12 +643,20 @@ function DayColumn({ dayKey, date, data, items, projects, isToday, onSaveDay, on
         </div>
       </div>
 
-      <div className="content-bucket">
-        <div className="section-title-row"><span>Content</span><span className="section-count">{items.length}</span></div>
+      <div className="vlog-bucket">
+        <div className="section-title-row"><span>Vlog</span><span className="section-count">{vlogItems.length}</span></div>
         <div className="cards">
-          {items.map((item) => <ContentCard key={item.id} item={item} project={projects.find((p) => p.id === item.project_id)} onOpen={onOpen} />)}
+          {vlogItems.map((item) => <VlogCard key={item.id} item={item} project={projects.find((p) => p.id === item.project_id)} onOpen={onOpen} />)}
         </div>
-        <button className="add-block" onClick={onAdd}>+ Add block</button>
+        <button className="add-block add-vlog" onClick={onAddVlog}>+ Add vlog moment</button>
+      </div>
+
+      <div className="content-bucket">
+        <div className="section-title-row"><span>Content</span><span className="section-count">{contentItems.length}</span></div>
+        <div className="cards">
+          {contentItems.map((item) => <ContentCard key={item.id} item={item} project={projects.find((p) => p.id === item.project_id)} onOpen={onOpen} />)}
+        </div>
+        <button className="add-block" onClick={onAddContent}>+ Add block</button>
       </div>
     </section>
   );
@@ -668,6 +689,23 @@ function ContentCard({ item, project, onOpen }: { item: FlowItem; project?: Flow
       </div>
       {m.plan && <p>{m.plan}</p>}
       <span className="open-hint">{m.copy ? "Open copy →" : "Add script / copy →"}</span>
+    </button>
+  );
+}
+
+function VlogCard({ item, project, onOpen }: { item: FlowItem; project?: FlowProject; onOpen: (item: FlowItem) => void }) {
+  const m = getMeta(item);
+  return (
+    <button className="content-card vlog-card" draggable
+      onDragStart={(e) => { e.dataTransfer.setData("text/flow-item", item.id); e.dataTransfer.effectAllowed = "move"; }}
+      onClick={() => onOpen(item)}>
+      <div className="card-title-row"><strong>{item.title}</strong><ProjectDot project={project} /></div>
+      <div className="card-meta-row">
+        <span className="vlog-pill">Vlog moment</span>
+        {project && <span className="project-chip" style={{ borderColor: project.color || "#999" }}>{project.name}</span>}
+      </div>
+      {m.plan && <p>{m.plan}</p>}
+      <span className="open-hint">{m.copy ? "Open capture notes →" : "Add story / capture notes →"}</span>
     </button>
   );
 }
@@ -878,10 +916,11 @@ function ProjectSelect({ value, onChange, projects }: { value: string; onChange:
   );
 }
 
-function NewBlockModal({ day, projects, onClose, onSave }: {
-  day: string | null; projects: FlowProject[]; onClose: () => void; onSave: (day: string | null, draft: DraftBlock) => Promise<void>;
+function NewBlockModal({ day, kind, projects, onClose, onSave }: {
+  day: string | null; kind: BlockKind; projects: FlowProject[]; onClose: () => void; onSave: (day: string | null, draft: DraftBlock) => Promise<void>;
 }) {
-  const [draft, setDraft] = useState<DraftBlock>({ title: "", channel: "Instagram", plan: "", project_id: "" });
+  const isVlog = kind === "vlog";
+  const [draft, setDraft] = useState<DraftBlock>({ title: "", channel: isVlog ? "" : "Instagram", plan: "", project_id: "" });
   const [saving, setSaving] = useState(false);
   async function submit(e: FormEvent) {
     e.preventDefault(); if (!draft.title.trim()) return; setSaving(true); await onSave(day, draft); setSaving(false);
@@ -889,14 +928,14 @@ function NewBlockModal({ day, projects, onClose, onSave }: {
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
       <form className="modal" onSubmit={submit} onMouseDown={(e) => e.stopPropagation()}>
-        <div className="modal-heading"><div><div className="eyebrow">{day ?? "INBOX"}</div><h2>New content block</h2></div><button type="button" className="icon-button" onClick={onClose}>×</button></div>
-        <label><span>Title</span><input autoFocus value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Red Bull Half Court" /></label>
-        <label><span>Channel</span><select value={draft.channel} onChange={(e) => setDraft({ ...draft, channel: e.target.value })}>
+        <div className="modal-heading"><div><div className="eyebrow">{day ?? "INBOX"}</div><h2>{isVlog ? "New vlog moment" : "New content block"}</h2></div><button type="button" className="icon-button" onClick={onClose}>×</button></div>
+        <label><span>{isVlog ? "Moment title" : "Title"}</span><input autoFocus value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder={isVlog ? "The moment the week changed" : "Red Bull Half Court"} /></label>
+        {!isVlog && <label><span>Channel</span><select value={draft.channel} onChange={(e) => setDraft({ ...draft, channel: e.target.value })}>
           <option>Instagram</option><option>LinkedIn</option><option>YouTube</option><option>TikTok</option><option>Substack</option><option>Stories</option><option>Multi-channel</option>
-        </select></label>
+        </select></label>}
         <label><span>Project</span><ProjectSelect value={draft.project_id} onChange={(v) => setDraft({ ...draft, project_id: v })} projects={projects} /></label>
-        <label><span>Plan</span><textarea rows={4} value={draft.plan} onChange={(e) => setDraft({ ...draft, plan: e.target.value })} placeholder="Event recap reel: arrival → energy → game → closing thought." /></label>
-        <div className="modal-actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary-button" disabled={saving || !draft.title.trim()}>{saving ? "Adding…" : "Add block"}</button></div>
+        <label><span>{isVlog ? "Story note" : "Plan"}</span><textarea rows={4} value={draft.plan} onChange={(e) => setDraft({ ...draft, plan: e.target.value })} placeholder={isVlog ? "Why this belongs in the weekly story, and what to capture…" : "Event recap reel: arrival → energy → game → closing thought."} /></label>
+        <div className="modal-actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary-button" disabled={saving || !draft.title.trim()}>{saving ? "Adding…" : isVlog ? "Add vlog moment" : "Add block"}</button></div>
       </form>
     </div>
   );
@@ -954,6 +993,7 @@ function DetailDrawer({ item, projects, onClose, onSave, onArchive }: {
   onArchive: (item: FlowItem) => Promise<void>;
 }) {
   const m = getMeta(item);
+  const isVlog = item.item_type === "vlog";
   const [title, setTitle] = useState(item.title);
   const [channel, setChannel] = useState(m.channel ?? "");
   const [projectId, setProjectId] = useState(item.project_id ?? "");
@@ -964,14 +1004,14 @@ function DetailDrawer({ item, projects, onClose, onSave, onArchive }: {
   return (
     <div className="drawer-backdrop" onMouseDown={onClose}>
       <aside className="drawer" onMouseDown={(e) => e.stopPropagation()}>
-        <div className="drawer-header"><div><div className="eyebrow">{item.day ?? "INBOX"} · {channel || "No channel"}</div><h2>Content detail</h2></div><button className="icon-button" onClick={onClose}>×</button></div>
+        <div className="drawer-header"><div><div className="eyebrow">{item.day ?? "INBOX"}{isVlog ? " · VLOG" : ` · ${channel || "No channel"}`}</div><h2>{isVlog ? "Vlog moment" : "Content detail"}</h2></div><button className="icon-button" onClick={onClose}>×</button></div>
         <label><span>Title</span><input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
-        <label><span>Channel</span><select value={channel} onChange={(e) => setChannel(e.target.value)}>
+        {!isVlog && <label><span>Channel</span><select value={channel} onChange={(e) => setChannel(e.target.value)}>
           <option>Instagram</option><option>LinkedIn</option><option>YouTube</option><option>TikTok</option><option>Substack</option><option>Stories</option><option>Multi-channel</option>
-        </select></label>
+        </select></label>}
         <label><span>Project</span><ProjectSelect value={projectId} onChange={setProjectId} projects={projects} /></label>
-        <label><span>Plan</span><textarea rows={5} value={plan} onChange={(e) => setPlan(e.target.value)} /></label>
-        <label className="copy-field"><span>Script / post copy</span><textarea rows={16} value={copy} onChange={(e) => setCopy(e.target.value)} /></label>
+        <label><span>{isVlog ? "Story notes" : "Plan"}</span><textarea rows={5} value={plan} onChange={(e) => setPlan(e.target.value)} /></label>
+        <label className="copy-field"><span>{isVlog ? "Capture notes / voiceover" : "Script / post copy"}</span><textarea rows={16} value={copy} onChange={(e) => setCopy(e.target.value)} /></label>
         <div className="drawer-actions">
           <button className="danger-button" onClick={() => void onArchive(item)}>Archive</button>
           <button className="primary-button" disabled={saving || !title.trim()} onClick={async () => {

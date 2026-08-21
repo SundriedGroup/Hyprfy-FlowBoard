@@ -1,4 +1,4 @@
-# Hyprfy Flowboard v0.11.5
+# Hyprfy Flowboard v0.11.6
 
 ## Mobile navigation
 - Removed fixed bottom navigation.

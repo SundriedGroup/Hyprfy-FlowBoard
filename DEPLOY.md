@@ -1,4 +1,4 @@
-# Deploy v0.11.5
+# Deploy v0.11.6
 
 Expected on mobile:
 - no bottom navigation
