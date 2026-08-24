@@ -18,7 +18,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import type { ContentMeta, FlowDay, FlowItem, FlowProject } from "@/lib/types";
 
-const APP_VERSION = "0.11.6";
+const APP_VERSION = "0.11.7";
 
 type DraftBlock = { title: string; channel: string; plan: string; project_id: string };
 type BlockKind = "content" | "vlog";
@@ -210,6 +210,9 @@ export function FlowboardApp() {
         content_kind: kind,
         plan: draft.plan.trim(),
         copy: "",
+        script: "",
+        post_copy: "",
+        storyboard: "",
         source_idea_id: sourceIdeaId,
       },
     }).select("*").single();
@@ -306,11 +309,12 @@ export function FlowboardApp() {
     await updateItem(item, { day, sort_order });
   }
 
-  async function saveDetail(item: FlowItem, title: string, channel: string, plan: string, copy: string, project_id: string) {
+  async function saveDetail(item: FlowItem, title: string, channel: string, plan: string, script: string, postCopy: string, storyboard: string, project_id: string) {
+    const legacyCopy = isVlogItem(item) ? storyboard : postCopy || script;
     await updateItem(item, {
       title,
       project_id: project_id || null,
-      metadata: { ...(item.metadata ?? {}), channel, plan, copy },
+      metadata: { ...(item.metadata ?? {}), channel, plan, copy: legacyCopy, script, post_copy: postCopy, storyboard },
     });
   }
 
@@ -693,7 +697,7 @@ function ContentCard({ item, project, onOpen }: { item: FlowItem; project?: Flow
         {project && <span className="project-chip" style={{ borderColor: project.color || "#999" }}>{project.name}</span>}
       </div>
       {m.plan && <p>{m.plan}</p>}
-      <span className="open-hint">{m.copy ? "Open copy →" : "Add script / copy →"}</span>
+      <span className="open-hint">{m.script || m.post_copy || m.storyboard || m.copy ? "Open content plan →" : "Add content plan →"}</span>
     </button>
   );
 }
@@ -994,7 +998,7 @@ function NewProjectModal({ onClose, onSave }: { onClose: () => void; onSave: (dr
 
 function DetailDrawer({ item, projects, onClose, onSave, onArchive }: {
   item: FlowItem; projects: FlowProject[]; onClose: () => void;
-  onSave: (item: FlowItem, title: string, channel: string, plan: string, copy: string, project_id: string) => Promise<void>;
+  onSave: (item: FlowItem, title: string, channel: string, plan: string, script: string, postCopy: string, storyboard: string, project_id: string) => Promise<void>;
   onArchive: (item: FlowItem) => Promise<void>;
 }) {
   const m = getMeta(item);
@@ -1003,24 +1007,44 @@ function DetailDrawer({ item, projects, onClose, onSave, onArchive }: {
   const [channel, setChannel] = useState(m.channel ?? "");
   const [projectId, setProjectId] = useState(item.project_id ?? "");
   const [plan, setPlan] = useState(m.plan ?? "");
-  const [copy, setCopy] = useState(m.copy ?? "");
+  const [script, setScript] = useState(m.script ?? (!isVlog ? m.copy ?? "" : ""));
+  const [postCopy, setPostCopy] = useState(m.post_copy ?? "");
+  const [storyboard, setStoryboard] = useState(m.storyboard ?? (isVlog ? m.copy ?? "" : ""));
   const [saving, setSaving] = useState(false);
+  const storyboardBeats = storyboard.split("\n").map((beat) => beat.trim().replace(/^\d+\s*[—.):-]?\s*/, "")).filter(Boolean).slice(0, 3);
+  const storyboardFrames = ["Opening frame", "Proof / detail", "Closing beat"].map((fallback, index) => storyboardBeats[index] || fallback);
 
   return (
-    <div className="drawer-backdrop" onMouseDown={onClose}>
-      <aside className="drawer" onMouseDown={(e) => e.stopPropagation()}>
-        <div className="drawer-header"><div><div className="eyebrow">{item.day ?? "INBOX"}{isVlog ? " · VLOG" : ` · ${channel || "No channel"}`}</div><h2>{isVlog ? "Vlog moment" : "Content detail"}</h2></div><button className="icon-button" onClick={onClose}>×</button></div>
-        <label><span>Title</span><input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
-        {!isVlog && <label><span>Channel</span><select value={channel} onChange={(e) => setChannel(e.target.value)}>
-          <option>Instagram</option><option>LinkedIn</option><option>YouTube</option><option>TikTok</option><option>Substack</option><option>Stories</option><option>Multi-channel</option>
-        </select></label>}
-        <label><span>Project</span><ProjectSelect value={projectId} onChange={setProjectId} projects={projects} /></label>
-        <label><span>{isVlog ? "Story notes" : "Plan"}</span><textarea rows={5} value={plan} onChange={(e) => setPlan(e.target.value)} /></label>
-        <label className="copy-field"><span>{isVlog ? "Capture notes / voiceover" : "Script / post copy"}</span><textarea rows={16} value={copy} onChange={(e) => setCopy(e.target.value)} /></label>
+    <div className="drawer-backdrop plan-drawer-backdrop" onMouseDown={onClose}>
+      <aside className="drawer plan-drawer" role="dialog" aria-modal="true" aria-labelledby="content-plan-title" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="drawer-header plan-drawer-header"><div><div className="eyebrow">{item.day ?? "INBOX"}{isVlog ? " · VLOG" : ` · ${channel || "No channel"}`}</div><h2 id="content-plan-title">{title || (isVlog ? "Vlog moment" : "Content plan")}</h2><p>{isVlog ? "Shape the story and plan the capture." : "The complete creative plan, from what you say to what your audience sees."}</p></div><button className="icon-button" onClick={onClose} aria-label="Close content plan">×</button></div>
+        <div className={`detail-meta-grid ${isVlog ? "is-vlog" : ""}`}>
+          <label className="detail-title-field"><span>Title</span><input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
+          {!isVlog && <label><span>Channel</span><select value={channel} onChange={(e) => setChannel(e.target.value)}>
+            <option>Instagram</option><option>LinkedIn</option><option>YouTube</option><option>TikTok</option><option>Substack</option><option>Stories</option><option>Multi-channel</option>
+          </select></label>}
+          <label><span>Project</span><ProjectSelect value={projectId} onChange={setProjectId} projects={projects} /></label>
+          <label className="detail-plan-field"><span>{isVlog ? "Story direction" : "Plan summary"}</span><textarea rows={2} value={plan} onChange={(e) => setPlan(e.target.value)} placeholder="The idea, angle and intended outcome…" /></label>
+        </div>
+        <div className={`creative-plan-grid ${isVlog ? "is-vlog" : ""}`}>
+          <section className="creative-plan-column script-plan-column">
+            <header><span className="creative-column-number">01</span><span className="creative-column-icon">¶</span><div><h3>{isVlog ? "Story / voiceover" : "Script"}</h3><p>{isVlog ? "The narrative and spoken beats." : "What is spoken or shown on screen."}</p></div></header>
+            <label><span className="visually-hidden">{isVlog ? "Story or voiceover" : "Script"}</span><textarea rows={15} value={script} onChange={(e) => setScript(e.target.value)} placeholder={isVlog ? "Opening thought, story beat, voiceover…" : "Hook\n\nWrite the full video, voiceover, carousel, or spoken script…"} /></label>
+          </section>
+          {!isVlog && <section className="creative-plan-column post-copy-column">
+            <header><span className="creative-column-number">02</span><span className="creative-column-icon">Aa</span><div><h3>Post copy</h3><p>The finished caption your audience will read.</p></div></header>
+            <label><span className="visually-hidden">Post copy</span><textarea rows={15} value={postCopy} onChange={(e) => setPostCopy(e.target.value)} placeholder="Write the caption or post that will be published with it…" /></label>
+          </section>}
+          <section className="creative-plan-column storyboard-plan-column">
+            <header><span className="creative-column-number">{isVlog ? "02" : "03"}</span><span className="creative-column-icon">▦</span><div><h3>Example storyboard</h3><p>Scenes, framing, footage and visual beats.</p></div></header>
+            <div className="storyboard-preview" aria-label="Storyboard preview">{storyboardFrames.map((frame, index) => <span key={`${index}-${frame}`}><b>{String(index + 1).padStart(2, "0")}</b><i>{frame}</i></span>)}</div>
+            <label><span className="visually-hidden">Example storyboard</span><textarea rows={9} value={storyboard} onChange={(e) => setStoryboard(e.target.value)} placeholder={'01 — Opening shot / hook\n02 — Detail, action or proof\n03 — Closing frame / CTA'} /><small>Use one numbered shot or frame per line.</small></label>
+          </section>
+        </div>
         <div className="drawer-actions">
           <button className="danger-button" onClick={() => void onArchive(item)}>Archive</button>
           <button className="primary-button" disabled={saving || !title.trim()} onClick={async () => {
-            setSaving(true); await onSave(item, title.trim(), channel, plan, copy, projectId); setSaving(false);
+            setSaving(true); await onSave(item, title.trim(), channel, plan, script, postCopy, storyboard, projectId); setSaving(false);
           }}>{saving ? "Saving…" : "Save changes"}</button>
         </div>
       </aside>

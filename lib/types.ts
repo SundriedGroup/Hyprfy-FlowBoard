@@ -57,6 +57,9 @@ export type ContentMeta = {
   channel?: string;
   plan?: string;
   copy?: string;
+  script?: string;
+  post_copy?: string;
+  storyboard?: string;
   source_url?: string;
   why_like?: string;
   source_idea_id?: string;
